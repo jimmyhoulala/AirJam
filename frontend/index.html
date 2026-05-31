@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>隔空弹奏乐器</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <h1 class="title">隔空弹奏乐器</h1>
+      <span class="mock-badge" id="mockBadge">演示模式</span>
+    </div>
+    <div class="header-right">
+      <span class="status-dot" id="wsStatus" title="后端连接状态"></span>
+      <span class="status-label" id="wsLabel">未连接</span>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- Camera -->
+    <section class="camera-section">
+      <div class="camera-container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="gestureCanvas"></canvas>
+        <div class="floating-notes" id="floatingNotes"></div>
+        <div class="camera-overlay" id="cameraOverlay">
+          <div class="overlay-icon">
+            <svg viewBox="0 0 24 24">
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+          </div>
+          <p class="overlay-text">等待 Python 识别桥发送手势</p>
+          <p class="overlay-hint">运行 gesture-instrument-bridge 后会显示骨架与映射区域</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Control Panel -->
+    <aside class="control-panel">
+      <!-- Instruments -->
+      <div class="panel-section">
+        <div class="panel-label">乐器</div>
+        <div class="instrument-grid" id="instrumentGrid">
+          <button class="instrument-card active" data-instrument="piano">
+            <span class="instrument-icon">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="4" y="6" width="24" height="20" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="12" y1="6" x2="12" y2="26" stroke="currentColor" stroke-width="1"/>
+                <line x1="20" y1="6" x2="20" y2="26" stroke="currentColor" stroke-width="1"/>
+                <rect x="9" y="6" width="3" height="12" rx="0.5" fill="currentColor" opacity="0.5"/>
+                <rect x="17" y="6" width="3" height="12" rx="0.5" fill="currentColor" opacity="0.5"/>
+                <rect x="24" y="6" width="3" height="12" rx="0.5" fill="currentColor" opacity="0.5"/>
+              </svg>
+            </span>
+            <span class="instrument-name">钢琴</span>
+          </button>
+          <button class="instrument-card" data-instrument="guitar">
+            <span class="instrument-icon">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="14" cy="22" rx="8" ry="6" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M22 16L28 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <ellipse cx="14" cy="22" rx="2" ry="1.5" fill="currentColor" opacity="0.4"/>
+                <line x1="26" y1="4" x2="30" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="26" y1="8" x2="30" y2="4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="instrument-name">吉他</span>
+          </button>
+          <button class="instrument-card" data-instrument="drums">
+            <span class="instrument-icon">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="10" rx="10" ry="4" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M6 10V20C6 22.2 10.5 24 16 24C21.5 24 26 22.2 26 20V10" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="4" y1="6" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="28" y1="6" x2="22" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <circle cx="4" cy="5" r="1.5" fill="currentColor"/>
+                <circle cx="28" cy="5" r="1.5" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="instrument-name">鼓</span>
+          </button>
+          <button class="instrument-card" data-instrument="musicbox">
+            <span class="instrument-icon">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="10" width="20" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="16" cy="18" r="4" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="16" cy="18" r="1" fill="currentColor"/>
+                <path d="M16 10V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M13 6H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M10 14H14" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+                <path d="M10 17H13" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+              </svg>
+            </span>
+            <span class="instrument-name">音乐盒</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mapping -->
+      <div class="panel-section">
+        <div class="panel-label">映射</div>
+        <div class="mapping-list">
+          <div class="mapping-row">
+            <span>右手顶部</span>
+            <strong id="mapInstrument">乐器区</strong>
+          </div>
+          <div class="mapping-row">
+            <span>右手底部</span>
+            <strong id="mapRoot">根音区</strong>
+          </div>
+          <div class="mapping-row">
+            <span>左手轮盘</span>
+            <strong id="mapQuality">Major</strong>
+          </div>
+        </div>
+        <div class="quality-chips" id="qualityChips">
+          <span data-quality="major">Major</span>
+          <span data-quality="minor">Minor</span>
+          <span data-quality="diminished">Dim</span>
+          <span data-quality="dominant seventh">7</span>
+          <span data-quality="major seventh">Maj7</span>
+          <span data-quality="mute">Mute</span>
+        </div>
+      </div>
+
+      <!-- Performance -->
+      <div class="panel-section">
+        <div class="panel-label">演奏</div>
+        <div class="perf-display">
+          <div class="perf-row">
+            <span class="perf-label">乐器</span>
+            <span class="perf-value" id="currentInstrument">钢琴</span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-label">和弦</span>
+            <span class="perf-value note" id="currentChord">--</span>
+          </div>
+          <div class="perf-row">
+            <span class="perf-label">音量</span>
+            <div class="volume-track">
+              <div class="volume-bar-bg">
+                <div class="volume-bar-fill" id="volumeBar" style="width: 72%"></div>
+              </div>
+              <span class="volume-pct" id="volumeValue">72%</span>
+            </div>
+          </div>
+          <div class="perf-row">
+            <span class="perf-label">状态</span>
+            <span class="play-state" id="playState">
+              <span class="state-indicator"></span> 静默
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gesture -->
+      <div class="panel-section">
+        <div class="panel-label">手势</div>
+        <div class="gesture-card">
+          <div class="gesture-name" id="gestureName">--</div>
+          <div class="gesture-meta" id="gestureConfidence"></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-item">
+      <span class="footer-key">ESP32</span>
+      <span class="status-dot" id="esp32Status"></span>
+      <span id="esp32Label">--</span>
+    </div>
+    <div class="footer-item">
+      <span class="footer-key">后端</span>
+      <span class="status-dot" id="backendStatus"></span>
+      <span id="backendLabel">--</span>
+    </div>
+    <div class="footer-item">
+      <span class="footer-key">FPS</span>
+      <span id="fpsDisplay">0</span>
+    </div>
+    <div class="footer-item">
+      <span class="footer-key">延迟</span>
+      <span id="latencyDisplay">0ms</span>
+    </div>
+  </footer>
+
+  <script src="js/ws.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/gesture.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/instrument.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/status.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

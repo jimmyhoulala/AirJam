@@ -1,0 +1,12 @@
+name: mediapipe-hands-instrument
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - "numpy>=1.26,<2"
+  - pytest>=8
+  - pip:
+      - mediapipe==0.10.21
+      - opencv-contrib-python==4.10.0.84
+      - websockets>=12.0

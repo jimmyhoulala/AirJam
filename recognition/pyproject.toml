@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gesture-instrument-recognition"
+version = "0.1.0"
+description = "MediaPipe Hands recognition bridge for the gesture instrument project."
+readme = "README.md"
+requires-python = ">=3.9,<3.13"
+dependencies = [
+  "mediapipe==0.10.21",
+  "numpy>=1.26,<2",
+  "opencv-contrib-python==4.10.0.84",
+  "websockets>=12.0",
+]
+
+[project.scripts]
+gesture-instrument-bridge = "hand_instrument.bridge:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
