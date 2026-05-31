@@ -1,2 +1,0 @@
-[console_scripts]
-gesture-instrument-bridge = hand_instrument.bridge:main

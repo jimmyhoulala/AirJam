@@ -63,9 +63,14 @@ const Audio = (() => {
   function playFrequency(freq, gainScale = 1) {
     switch (currentInstrument) {
       case 'piano': playPiano(freq, gainScale); break;
-      case 'guitar': playGuitar(freq, gainScale); break;
+      case 'guitar':
+      case 'electric_guitar':
+        playGuitar(freq, gainScale);
+        break;
+      case 'acoustic_guitar':
+        playAcousticGuitar(freq, gainScale);
+        break;
       case 'drums': playDrums(freq, gainScale); break;
-      case 'musicbox': playMusicBox(freq, gainScale); break;
       default: playPiano(freq, gainScale);
     }
   }
@@ -154,6 +159,30 @@ const Audio = (() => {
     osc.stop(now + duration);
   }
 
+  function playAcousticGuitar(freq, gainScale = 1) {
+    const now = ctx.currentTime;
+    const duration = 1.0;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+
+    const body = ctx.createBiquadFilter();
+    body.type = 'bandpass';
+    body.frequency.value = Math.max(180, freq * 1.8);
+    body.Q.value = 0.9;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.34 * gainScale, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.12 * gainScale, now + 0.16);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    osc.connect(body).connect(gain).connect(masterGain);
+    osc.start(now);
+    osc.stop(now + duration);
+  }
+
   /**
    * 鼓：低频正弦 + 噪声冲击
    */
@@ -195,44 +224,6 @@ const Audio = (() => {
 
     noise.connect(noiseFilter).connect(gainNoise).connect(masterGain);
     noise.start(now);
-  }
-
-  /**
-   * 音乐盒：高频正弦 + 快速衰减，铃声感
-   */
-  function playMusicBox(freq, gainScale = 1) {
-    const now = ctx.currentTime;
-    const duration = 0.6;
-
-    // 基频
-    const osc1 = ctx.createOscillator();
-    osc1.type = 'sine';
-    osc1.frequency.value = freq * 2; // 音乐盒音色偏高
-
-    // 八度泛音
-    const osc2 = ctx.createOscillator();
-    osc2.type = 'sine';
-    osc2.frequency.value = freq * 4;
-
-    const gain1 = ctx.createGain();
-    const gain2 = ctx.createGain();
-
-    // 音乐盒包络：极快起音，清脆衰减
-    gain1.gain.setValueAtTime(0, now);
-    gain1.gain.linearRampToValueAtTime(0.3 * gainScale, now + 0.003);
-    gain1.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
-    gain2.gain.setValueAtTime(0, now);
-    gain2.gain.linearRampToValueAtTime(0.1 * gainScale, now + 0.003);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.5);
-
-    osc1.connect(gain1).connect(masterGain);
-    osc2.connect(gain2).connect(masterGain);
-
-    osc1.start(now);
-    osc2.start(now);
-    osc1.stop(now + duration);
-    osc2.stop(now + duration);
   }
 
   /**

@@ -1,1 +1,5 @@
 websockets>=12.0
+pygame>=2.5
+
+# Optional FluidSynth fallback when a pre-rendered WAV sample is missing.
+# pyfluidsynth>=1.3

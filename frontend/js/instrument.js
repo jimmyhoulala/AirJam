@@ -8,9 +8,9 @@ const Instrument = (() => {
 
   const INSTRUMENTS = {
     piano: { name: '钢琴', icon: 'piano' },
-    guitar: { name: '吉他', icon: 'guitar' },
+    electric_guitar: { name: '电吉他', icon: 'guitar' },
+    acoustic_guitar: { name: '木吉他', icon: 'guitar' },
     drums: { name: '鼓', icon: 'drums' },
-    musicbox: { name: '音乐盒', icon: 'musicbox' }
   };
 
   const listeners = {};
@@ -47,7 +47,7 @@ const Instrument = (() => {
    */
   function select(instrument, options = {}) {
     if (!INSTRUMENTS[instrument]) return;
-    if (instrument === currentInstrument) return;
+    if (instrument === currentInstrument && !options.force) return;
 
     currentInstrument = instrument;
 

@@ -46,13 +46,15 @@ const FloatingNotes = (() => {
  * 整合所有子模块，初始化应用
  */
 const App = (() => {
-  let mockMode = new URLSearchParams(window.location.search).get('mock') === '1';
+  const params = new URLSearchParams(window.location.search);
+  let mockMode = params.get('mock') === '1';
+  let localAudio = params.get('localAudio') === '1';
   let mockInterval = null;
 
   function init() {
     Camera.init();
     Gesture.init();
-    Audio.init();
+    if (localAudio) Audio.init();
     Instrument.init();
     Player.init();
     Status.init();
@@ -96,6 +98,17 @@ const App = (() => {
       if (!data.connected && !mockMode) Camera.setBridgeActive(false);
     });
 
+    WS.on('hardware_status', (msg) => {
+      Status.setHardware(msg.connected, msg.connected ? msg.mode : '');
+      Camera.setBridgeActive(msg.connected);
+      updateMappingPanel({ instrument: msg.mode });
+    });
+
+    WS.on('camera_frame', (msg) => {
+      Status.setHardware(true, 'video');
+      Camera.setFrame(msg.dataUrl);
+    });
+
     // Gesture data
     WS.on('gesture', (msg) => {
       Status.startLatency();
@@ -121,21 +134,57 @@ const App = (() => {
 
     // Chord data - play audio
     WS.on('chord', (msg) => {
-      if (!msg.muted) {
+      Status.incrementEvents();
+      if (msg.instrument) Instrument.select(msg.instrument, { silent: true, force: true });
+      setHardwareEvent(msg.chord || msg.root || '--', msg.instrument || '');
+      Gesture.updateGesture({
+        instrument: msg.instrument,
+        chord: msg.chord,
+        eventLabel: msg.chord
+      });
+      if (localAudio && !msg.muted) {
         Audio.playChord(msg);
-        FloatingNotes.spawn(msg.chord || msg.root);
       }
+      if (!msg.muted) FloatingNotes.spawn(msg.chord || msg.root);
       Player.setChord(msg);
       Player.setPlaying(!msg.muted);
-      updateMappingPanel({ root: { index: msg.rootIndex, name: msg.root }, quality: { name: msg.quality, label: msg.qualityLabel } });
+      updateMappingPanel({
+        instrument: msg.instrument,
+        root: { index: msg.rootIndex, name: msg.root },
+        quality: { name: msg.quality, label: msg.qualityLabel }
+      });
     });
 
     // Note data - play audio
     WS.on('note', (msg) => {
-      Audio.playNote(msg.note);
+      Status.incrementEvents();
+      if (msg.instrument) Instrument.select(msg.instrument, { silent: true, force: true });
+      setHardwareEvent(msg.note || '--', msg.instrument || '');
+      Gesture.updateGesture({
+        instrument: msg.instrument,
+        note: msg.note,
+        eventLabel: msg.note
+      });
+      if (localAudio) Audio.playNote(msg.note);
       Player.setNote(msg.note);
       Player.setPlaying(true);
       FloatingNotes.spawn(msg.note);
+    });
+
+    WS.on('drum', (msg) => {
+      Status.incrementEvents();
+      Instrument.select('drums', { silent: true, force: true });
+      const label = `${msg.drum || 'drum'} ${msg.velocity || ''}`.trim();
+      setHardwareEvent(label, `power ${msg.power || 0}`);
+      Gesture.updateGesture({
+        instrument: 'drums',
+        eventLabel: label
+      });
+      Player.setNote(label);
+      Player.setPlaying(true);
+      if (localAudio) Audio.playNote('C3');
+      FloatingNotes.spawn('drums');
+      updateMappingPanel({ instrument: 'drums', root: msg.drum, quality: msg.velocity });
     });
 
     // Volume data
@@ -147,12 +196,9 @@ const App = (() => {
     // Instrument switch
     WS.on('instrument', (msg) => {
       Instrument.select(msg.instrument, { silent: true });
+      setHardwareEvent(Instrument.getInstrument(msg.instrument)?.name || msg.instrument, 'mode');
+      Gesture.updateGesture({ instrument: msg.instrument, eventLabel: Instrument.getInstrument(msg.instrument)?.name || msg.instrument });
       updateMappingPanel({ instrument: msg.instrument });
-    });
-
-    // ESP32 status
-    WS.on('esp32_status', (msg) => {
-      Status.setESP32(msg.connected);
     });
 
     // Camera FPS
@@ -174,9 +220,10 @@ const App = (() => {
   function updateMappingPanel(msg = {}) {
     const instrumentNames = {
       piano: '钢琴',
-      guitar: '吉他',
+      electric_guitar: '电吉他',
+      acoustic_guitar: '木吉他',
       drums: '鼓',
-      musicbox: '音乐盒'
+      selecting: '选择中'
     };
     const qualityLabels = {
       major: 'Major',
@@ -197,16 +244,29 @@ const App = (() => {
     const rootName = msg.root?.candidateName || msg.root?.name || msg.root;
     if (mapRoot && rootName) mapRoot.textContent = rootName;
 
-    const qualityName = msg.quality?.candidate || msg.quality?.name || msg.quality;
+    const qualityName = msg.quality?.candidate || msg.quality?.label || msg.quality?.name || msg.qualityLabel || msg.quality;
     if (mapQuality && qualityName) mapQuality.textContent = qualityLabels[qualityName] || qualityName;
-    setQualityChips(qualityName);
+    setInstrumentChips(instrument);
   }
 
-  function setQualityChips(activeQuality) {
-    const chips = document.querySelectorAll('#qualityChips [data-quality]');
+  function setInstrumentChips(activeInstrument) {
+    const chips = document.querySelectorAll('#qualityChips [data-instrument-chip]');
     chips.forEach(chip => {
-      chip.classList.toggle('active', chip.dataset.quality === activeQuality);
+      chip.classList.toggle('active', chip.dataset.instrumentChip === activeInstrument);
     });
+  }
+
+  function setHardwareEvent(label, meta = '') {
+    const nameEl = document.getElementById('gestureName');
+    const confEl = document.getElementById('gestureConfidence');
+    if (nameEl) {
+      if (nameEl.textContent !== label) {
+        nameEl.classList.add('changing');
+        setTimeout(() => nameEl.classList.remove('changing'), 300);
+      }
+      nameEl.textContent = label;
+    }
+    if (confEl) confEl.textContent = meta;
   }
 
   /**
@@ -219,31 +279,27 @@ const App = (() => {
     setTimeout(() => {
       Status.setWebSocket(true);
       Status.setBackend(true);
-      Status.setESP32(true);
+      Status.setHardware(true, 'mock');
     }, 600);
 
     let gestureIndex = 0;
-    const gestures = ['C major', 'D minor', 'F 7', 'A maj7', 'Muted'];
+    const gestures = ['Piano C4', 'Electric C5 down', 'Acoustic G up', 'Snare accent'];
     const mockChords = [
-      { type: 'chord', rootIndex: 0, root: 'C', quality: 'major', qualityLabel: 'major', chord: 'C major', frequencies: [261.63, 329.63, 392.0], midiNotes: [60, 64, 67], muted: false },
-      { type: 'chord', rootIndex: 2, root: 'D', quality: 'minor', qualityLabel: 'minor', chord: 'D minor', frequencies: [293.66, 349.23, 440.0], midiNotes: [62, 65, 69], muted: false },
-      { type: 'chord', rootIndex: 5, root: 'F', quality: 'dominant seventh', qualityLabel: '7', chord: 'F 7', frequencies: [349.23, 440.0, 523.25, 622.25], midiNotes: [65, 69, 72, 75], muted: false },
-      { type: 'chord', rootIndex: null, root: '-', quality: 'mute', qualityLabel: 'mute', chord: 'Muted', frequencies: [], midiNotes: [], muted: true }
+      { type: 'note', instrument: 'piano', note: 'C4' },
+      { type: 'chord', instrument: 'electric_guitar', root: 'C5', quality: 'strum', qualityLabel: 'down', chord: 'C5 down', frequencies: [130.81, 196, 261.63], midiNotes: [48, 55, 60], muted: false },
+      { type: 'chord', instrument: 'acoustic_guitar', root: 'G', quality: 'strum', qualityLabel: 'up', chord: 'G up', frequencies: [98, 123.47, 146.83, 196, 246.94, 392], midiNotes: [43, 47, 50, 55, 59, 67], muted: false },
+      { type: 'drum', instrument: 'drums', drum: 'snare', velocity: 'accent', power: 1200 }
     ];
 
     mockInterval = setInterval(() => {
-      const chord = mockChords[gestureIndex % mockChords.length];
+      const event = mockChords[gestureIndex % mockChords.length];
       const mockGesture = {
         type: 'gesture',
-        hands: [
-          { handedness: 'Right', score: 0.94, landmarks: generateMockLandmarks(0.62, 0.78) },
-          { handedness: 'Left', score: 0.91, landmarks: generateMockLandmarks(0.18, 0.45) }
-        ],
-        root: { index: chord.rootIndex, name: chord.root, candidateIndex: chord.rootIndex, candidateName: chord.root },
-        quality: { name: chord.quality, label: chord.qualityLabel, candidate: chord.quality },
-        instrument: Instrument.getCurrent(),
+        hands: [],
+        instrument: event.instrument,
+        eventLabel: event.chord || event.note || `${event.drum} ${event.velocity}`,
         instrumentZone: null,
-        muted: chord.muted
+        muted: false
       };
       Gesture.updateGesture(mockGesture);
       Camera.setBridgeActive(true);
@@ -255,18 +311,27 @@ const App = (() => {
       if (confEl) confEl.textContent = `置信度 ${Math.round(85 + Math.random() * 15)}%`;
       gestureIndex++;
 
-      // Mock chords with audio
-      if (!chord.muted) {
-        Audio.playChord(chord);
-        Player.setChord(chord);
-        Player.setPlaying(true);
-        FloatingNotes.spawn(chord.chord);
+      Status.incrementEvents();
+      if (event.type === 'note') {
+        if (localAudio) Audio.playNote(event.note);
+        Instrument.select(event.instrument, { silent: true, force: true });
+        setHardwareEvent(event.note, event.instrument);
+        Player.setNote(event.note);
+        FloatingNotes.spawn(event.note);
+      } else if (event.type === 'chord') {
+        if (localAudio) Audio.playChord(event);
+        Instrument.select(event.instrument, { silent: true, force: true });
+        setHardwareEvent(event.chord, event.instrument);
+        Player.setChord(event);
+        FloatingNotes.spawn(event.chord);
       } else {
-        Player.setChord(chord);
-        Player.setPlaying(false);
+        Instrument.select(event.instrument, { silent: true, force: true });
+        setHardwareEvent(`${event.drum} ${event.velocity}`, `power ${event.power}`);
+        Player.setNote(`${event.drum} ${event.velocity}`);
+        FloatingNotes.spawn('drums');
       }
+      Player.setPlaying(true);
 
-      Status.setFps(Math.round(28 + Math.random() * 4));
       Status.setLatency(Math.round(5 + Math.random() * 15));
 
     }, 500);

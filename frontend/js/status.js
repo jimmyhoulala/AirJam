@@ -4,20 +4,21 @@
  */
 const Status = (() => {
   let wsDotEl, wsLabelEl;
-  let esp32DotEl, esp32LabelEl;
+  let hardwareDotEl, hardwareLabelEl;
   let backendDotEl, backendLabelEl;
-  let fpsEl, latencyEl;
+  let eventEl, latencyEl;
 
   let latencyStart = 0;
+  let eventCount = 0;
 
   function init() {
     wsDotEl = document.getElementById('wsStatus');
     wsLabelEl = document.getElementById('wsLabel');
-    esp32DotEl = document.getElementById('esp32Status');
-    esp32LabelEl = document.getElementById('esp32Label');
+    hardwareDotEl = document.getElementById('hardwareStatus');
+    hardwareLabelEl = document.getElementById('hardwareLabel');
     backendDotEl = document.getElementById('backendStatus');
     backendLabelEl = document.getElementById('backendLabel');
-    fpsEl = document.getElementById('fpsDisplay');
+    eventEl = document.getElementById('eventDisplay');
     latencyEl = document.getElementById('latencyDisplay');
   }
 
@@ -32,9 +33,9 @@ const Status = (() => {
     if (wsLabelEl) wsLabelEl.textContent = connected ? '在线' : '离线';
   }
 
-  function setESP32(connected) {
-    setDot(esp32DotEl, connected ? 'connected' : 'warning');
-    if (esp32LabelEl) esp32LabelEl.textContent = connected ? '在线' : '离线';
+  function setHardware(connected, label = '') {
+    setDot(hardwareDotEl, connected ? 'connected' : 'warning');
+    if (hardwareLabelEl) hardwareLabelEl.textContent = connected ? (label || '在线') : '离线';
   }
 
   function setBackend(connected) {
@@ -43,7 +44,12 @@ const Status = (() => {
   }
 
   function setFps(fps) {
-    if (fpsEl) fpsEl.textContent = fps;
+    if (eventEl) eventEl.textContent = fps;
+  }
+
+  function incrementEvents() {
+    eventCount += 1;
+    if (eventEl) eventEl.textContent = eventCount;
   }
 
   function startLatency() {
@@ -62,5 +68,5 @@ const Status = (() => {
     if (latencyEl) latencyEl.textContent = ms + 'ms';
   }
 
-  return { init, setWebSocket, setESP32, setBackend, setFps, startLatency, endLatency, setLatency };
+  return { init, setWebSocket, setHardware, setBackend, setFps, incrementEvents, startLatency, endLatency, setLatency };
 })();
