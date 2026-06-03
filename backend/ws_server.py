@@ -9,6 +9,14 @@ import websockets
 # 所有连接的客户端
 clients = set()
 
+# 硬件路由器引用（由 main.py 设置）
+_hardware_router = None
+
+
+def set_hardware_router(router):
+    global _hardware_router
+    _hardware_router = router
+
 
 def normalize_message(data):
     """Normalize command-style client messages into broadcast events."""
@@ -17,7 +25,32 @@ def normalize_message(data):
         instrument = data.get("instrument")
         if not instrument:
             return None
+        # 转发 MODE 命令给 MaixCam 硬件
+        if _hardware_router:
+            _hardware_router.send_mode(instrument)
         return {"type": "instrument", "instrument": instrument}
+
+    if msg_type == "auto_strum":
+        enabled = data.get("enabled", False)
+        bpm = data.get("bpm")
+        if _hardware_router:
+            _hardware_router.set_auto_strum(enabled, bpm)
+        return {
+            "type": "auto_strum_status",
+            "enabled": _hardware_router.auto_strum_enabled if _hardware_router else enabled,
+            "bpm": _hardware_router.auto_strum_bpm if _hardware_router else (bpm or 120),
+        }
+
+    if msg_type == "set_strum_pattern":
+        pattern = data.get("pattern")
+        if not pattern:
+            return None
+        if _hardware_router:
+            _hardware_router.set_strum_pattern(pattern)
+        return {
+            "type": "strum_pattern_status",
+            "pattern": _hardware_router.auto_strum_pattern if _hardware_router else pattern,
+        }
 
     if msg_type == "set_volume":
         volume = data.get("volume")

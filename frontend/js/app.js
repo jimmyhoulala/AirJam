@@ -102,6 +102,10 @@ const App = (() => {
       Status.setHardware(msg.connected, msg.connected ? msg.mode : '');
       Camera.setBridgeActive(msg.connected);
       updateMappingPanel({ instrument: msg.mode });
+      // 同步模式到手势模块，确保退回选乐器时区域边框恢复
+      if (msg.mode === 'selecting') {
+        Gesture.updateGesture({ instrument: null });
+      }
     });
 
     WS.on('camera_frame', (msg) => {
@@ -211,10 +215,17 @@ const App = (() => {
       console.warn('摄像头错误:', err.message);
     });
 
-    // Instrument change event - sync audio instrument
+    // Instrument change event - sync audio, gesture, and auto-strum visibility
     Instrument.on('change', (data) => {
       Audio.setInstrument(data.instrument);
+      Gesture.updateGesture({ instrument: data.instrument });
+      Gesture.triggerEvent(data.name || data.instrument);
+      Gesture.draw();
+      updateAutoStrumVisibility(data.instrument);
     });
+
+    // Auto-strum controls
+    initAutoStrum();
   }
 
   function updateMappingPanel(msg = {}) {
@@ -267,6 +278,90 @@ const App = (() => {
       nameEl.textContent = label;
     }
     if (confEl) confEl.textContent = meta;
+  }
+
+  // ===== 自动扫弦 =====
+  let autoStrumEnabled = false;
+  let autoStrumBpm = 120;
+
+  function initAutoStrum() {
+    const bar = document.getElementById('autoStrumBar');
+    const toggle = document.getElementById('autoStrumToggle');
+    const bpmDown = document.getElementById('bpmDown');
+    const bpmUp = document.getElementById('bpmUp');
+    const bpmValue = document.getElementById('bpmValue');
+    if (!bar || !toggle) return;
+
+    toggle.addEventListener('click', () => {
+      autoStrumEnabled = !autoStrumEnabled;
+      toggle.classList.toggle('active', autoStrumEnabled);
+      WS.send({ type: 'auto_strum', enabled: autoStrumEnabled, bpm: autoStrumBpm });
+    });
+
+    if (bpmDown) {
+      bpmDown.addEventListener('click', () => {
+        autoStrumBpm = Math.max(40, autoStrumBpm - 10);
+        if (bpmValue) bpmValue.textContent = autoStrumBpm;
+        if (autoStrumEnabled) WS.send({ type: 'auto_strum', enabled: true, bpm: autoStrumBpm });
+      });
+    }
+
+    if (bpmUp) {
+      bpmUp.addEventListener('click', () => {
+        autoStrumBpm = Math.min(240, autoStrumBpm + 10);
+        if (bpmValue) bpmValue.textContent = autoStrumBpm;
+        if (autoStrumEnabled) WS.send({ type: 'auto_strum', enabled: true, bpm: autoStrumBpm });
+      });
+    }
+
+    // 监听后端状态同步
+    WS.on('auto_strum_status', (msg) => {
+      autoStrumEnabled = msg.enabled;
+      autoStrumBpm = msg.bpm || autoStrumBpm;
+      toggle.classList.toggle('active', autoStrumEnabled);
+      if (bpmValue) bpmValue.textContent = autoStrumBpm;
+    });
+
+    // 节奏型选项卡
+    const patternTabs = document.getElementById('strumPatternTabs');
+    if (patternTabs) {
+      patternTabs.addEventListener('click', (e) => {
+        const tab = e.target.closest('.strum-pattern-tab');
+        if (!tab) return;
+        const pattern = tab.dataset.pattern;
+        if (!pattern) return;
+        // 更新UI
+        patternTabs.querySelectorAll('.strum-pattern-tab').forEach(t => {
+          t.classList.toggle('active', t === tab);
+        });
+        // 发送给后端
+        WS.send({ type: 'set_strum_pattern', pattern });
+      });
+    }
+
+    // 监听后端节奏型同步
+    WS.on('strum_pattern_status', (msg) => {
+      const pattern = msg.pattern;
+      if (patternTabs && pattern) {
+        patternTabs.querySelectorAll('.strum-pattern-tab').forEach(t => {
+          t.classList.toggle('active', t.dataset.pattern === pattern);
+        });
+      }
+    });
+  }
+
+  function updateAutoStrumVisibility(instrument) {
+    const bar = document.getElementById('autoStrumBar');
+    if (!bar) return;
+    const isGuitar = instrument === 'electric_guitar' || instrument === 'acoustic_guitar';
+    bar.classList.toggle('visible', isGuitar);
+    // 切离吉他时关闭自动扫弦
+    if (!isGuitar && autoStrumEnabled) {
+      autoStrumEnabled = false;
+      const toggle = document.getElementById('autoStrumToggle');
+      if (toggle) toggle.classList.remove('active');
+      WS.send({ type: 'auto_strum', enabled: false });
+    }
   }
 
   /**

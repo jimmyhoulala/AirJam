@@ -8,6 +8,7 @@ from face_tracking.note_output import UdpInstrumentOutput
 from face_tracking.piano import PianoModeController
 from face_tracking.scale_gestures import NumericGestureRecognizer, is_right_hand
 from maix import image, camera, display, time, nn, touchscreen, sys, app
+import socket as _socket
 
 ### model path
 if sys.device_name().lower() == "maixcam2":
@@ -21,10 +22,21 @@ INDEX_DOWN_PITCH_STEP = 0.8
 PC_SYNTH_HOST = "10.143.177.237"
 PC_DRUM_PORT = 5020
 HEARTBEAT_INTERVAL_MS = 1000
-PREVIEW_INTERVAL_MS = 180
-PREVIEW_WIDTH = 320
-PREVIEW_HEIGHT = 240
-PREVIEW_QUALITY = 55
+# 追踪模式：低画质低延迟，减少舵机抖动
+TRACKING_PREVIEW_INTERVAL_MS = 120
+TRACKING_PREVIEW_WIDTH = 320
+TRACKING_PREVIEW_HEIGHT = 240
+TRACKING_PREVIEW_QUALITY = 50
+# 空闲模式：高画质
+IDLE_PREVIEW_INTERVAL_MS = 80
+IDLE_PREVIEW_WIDTH = 640
+IDLE_PREVIEW_HEIGHT = 480
+IDLE_PREVIEW_QUALITY = 80
+# 当前预览参数（初始为追踪模式）
+preview_interval_ms = TRACKING_PREVIEW_INTERVAL_MS
+preview_width = TRACKING_PREVIEW_WIDTH
+preview_height = TRACKING_PREVIEW_HEIGHT
+preview_quality = TRACKING_PREVIEW_QUALITY
 
 try:
     import config as _config
@@ -69,7 +81,7 @@ class Target:
         self.instrument_return_controller = InstrumentReturnController()
         self.selected_instrument = None
         self.pending_selection = None
-        self.piano_controller = PianoModeController(self.w, self.h - 48)
+        self.piano_controller = PianoModeController(self.w, self.h - 48, key_height=(self.h - 48) // 2)
         self.guitar_controller = GuitarModeController()
         self.acoustic_guitar_controller = GuitarModeController(chords=ACOUSTIC_GUITAR_CHORDS)
         self.last_note_midi = None
@@ -94,13 +106,22 @@ class Target:
         self.box = [0, 0, self.img_exit.width(), self.img_exit.height()]
         self.need_exit = False
 
+    def set_instrument(self, instrument):
+        """Force switch to a specific instrument (called by UDP command)."""
+        KNOWN = {"drums", "electric_guitar", "acoustic_guitar", "piano"}
+        if instrument not in KNOWN:
+            return
+        self.selected_instrument = instrument
+        self.pending_selection = None
+        print(f"[CMD] instrument forced to: {instrument}")
+
     def __return_to_instrument_selection(self):
         self.selected_instrument = None
         self.pending_selection = None
         self.instrument_selector.reset()
         self.instrument_return_controller.reset()
         self.snare_controller = SnareDrumController()
-        self.piano_controller = PianoModeController(self.w, self.h - 48)
+        self.piano_controller = PianoModeController(self.w, self.h - 48, key_height=(self.h - 48) // 2)
         self.guitar_controller = GuitarModeController()
         self.acoustic_guitar_controller = GuitarModeController(chords=ACOUSTIC_GUITAR_CHORDS)
         self.last_note_midi = None
@@ -190,7 +211,7 @@ class Target:
         output = getattr(self, "instrument_output", None)
         if not output:
             return
-        if now_ms - self.last_preview_ms < PREVIEW_INTERVAL_MS:
+        if now_ms - self.last_preview_ms < preview_interval_ms:
             return
         self.last_preview_ms = now_ms
         frame = self.__encode_preview_jpeg(img)
@@ -199,16 +220,16 @@ class Target:
 
     def __encode_preview_jpeg(self, img):
         try:
-            preview = img.resize(PREVIEW_WIDTH, PREVIEW_HEIGHT)
+            preview = img.resize(preview_width, preview_height)
         except Exception:
             preview = img
 
         attempts = [
-            lambda: preview.to_jpeg(quality=PREVIEW_QUALITY),
-            lambda: preview.to_jpeg(PREVIEW_QUALITY),
+            lambda: preview.to_jpeg(quality=preview_quality),
+            lambda: preview.to_jpeg(preview_quality),
             lambda: preview.to_jpeg(),
-            lambda: preview.compress(quality=PREVIEW_QUALITY),
-            lambda: preview.compress(PREVIEW_QUALITY),
+            lambda: preview.compress(quality=preview_quality),
+            lambda: preview.compress(preview_quality),
             lambda: preview.to_bytes("jpg"),
             lambda: preview.to_bytes("jpeg"),
             lambda: preview.tobytes("jpg"),
@@ -225,7 +246,7 @@ class Target:
         try:
             path = "/tmp/airjam_preview.jpg"
             try:
-                preview.save(path, quality=PREVIEW_QUALITY)
+                preview.save(path, quality=preview_quality)
             except TypeError:
                 preview.save(path)
             with open(path, "rb") as file:
@@ -248,6 +269,7 @@ class Target:
         self.last_hand_center = None
         self.last_note_midi = None
         self.last_guitar_strum = None
+        guitar_left_found = False
         face_boxes = getattr(self, "current_face_boxes", None)
         detected_hands = []
         for obj in hand_objs:
@@ -295,13 +317,21 @@ class Target:
                             is_right = is_right_hand(obj, getattr(self.hand_detector, "labels", None), mirrored=True)
                             if is_right:
                                 self.last_guitar_strum = guitar_controller.update_right(landmarks, now_ms)
+                                guitar_left_found = True  # 右手存在说明双手都在
                             else:
                                 number = self.numeric_gesture_recognizer.classify(landmarks)
                                 chord = guitar_controller.update_left(number)
                                 if chord:
                                     self.last_guitar_chord = chord
+                                else:
+                                    self.last_guitar_chord = None
+                                guitar_left_found = True
                     except Exception as exc:
                         print(f"instrument update error: {exc}")
+
+        # 吉他模式下左手未检测到时清除和弦
+        if self.selected_instrument in ("electric_guitar", "acoustic_guitar") and not guitar_left_found:
+            self.last_guitar_chord = None
 
         for obj, landmarks in detected_hands:
             if gesture is None:
@@ -369,13 +399,18 @@ class Target:
 
     def __draw_piano_keyboard(self, img):
         layout = self.piano_controller.layout
+        active_midi = self.piano_controller.active_midi
         for key in layout.white_keys:
-            img.draw_rect(key.x, key.y, key.w, key.h, image.COLOR_WHITE, 1)
-            img.draw_string(key.x + 4, key.y + key.h - 20, key.degree, image.COLOR_WHITE)
+            is_active = key.midi == active_midi
+            color = image.COLOR_GREEN if is_active else image.COLOR_WHITE
+            img.draw_rect(key.x, key.y, key.w, key.h, color, 2 if is_active else 1)
+            img.draw_string(key.x + 4, key.y + key.h - 20, key.degree, color)
         for key in layout.black_keys:
+            is_active = key.midi == active_midi
+            color = image.COLOR_GREEN if is_active else image.COLOR_WHITE
             img.draw_rect(key.x, key.y, key.w, key.h, image.COLOR_BLACK, -1)
-            img.draw_rect(key.x, key.y, key.w, key.h, image.COLOR_WHITE, 1)
-            img.draw_string(key.x + 2, key.y + key.h - 18, key.degree, image.COLOR_WHITE)
+            img.draw_rect(key.x, key.y, key.w, key.h, color, 2 if is_active else 1)
+            img.draw_string(key.x + 2, key.y + key.h - 18, key.degree, color)
 
     def get_target_err(self, track_faces=True):
         """Obtain the error value between the target and the center point.
@@ -436,15 +471,33 @@ if __name__ == '__main__':
     instrument_output = UdpInstrumentOutput(PC_SYNTH_HOST, PC_DRUM_PORT)
     target.instrument_output = instrument_output
 
+    # UDP 命令接收（接收前端切换乐器等指令）
+    cmd_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+    cmd_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    cmd_sock.bind(("0.0.0.0", 5021))
+    cmd_sock.setblocking(False)
+    print(f"[CMD] listening for commands on UDP port 5021")
+
     total_uesd_time = 0
     total_fps = 0
     t0 = time.ticks_ms()
     last_heartbeat_ms = 0
+    was_tracking = True  # 初始为追踪模式（低画质）
+    last_chord_send_ms = 0  # 上次发送和弦的时间
     while not target.is_need_exit() and not app.need_exit():
         ltime = time.ticks_ms()
         if ltime - last_heartbeat_ms >= HEARTBEAT_INTERVAL_MS:
             instrument_output.heartbeat(target.selected_instrument or "selecting")
             last_heartbeat_ms = ltime
+
+        # 检查前端发来的 UDP 命令
+        try:
+            data, _ = cmd_sock.recvfrom(256)
+            msg = data.decode("ascii", "ignore").strip()
+            if msg.startswith("MODE|"):
+                target.set_instrument(msg[5:])
+        except BlockingIOError:
+            pass
 
         # get target error
         track_faces = gesture_controller.mode is not TrackingMode.LOCKED
@@ -454,6 +507,19 @@ if __name__ == '__main__':
             continue
         t0 = time.ticks_ms()
         gesture_command = gesture_controller.update(gesture, face_visible)
+        # 根据追踪状态切换预览画质
+        if gesture_command.should_track != was_tracking:
+            if gesture_command.should_track:
+                preview_interval_ms = TRACKING_PREVIEW_INTERVAL_MS
+                preview_width = TRACKING_PREVIEW_WIDTH
+                preview_height = TRACKING_PREVIEW_HEIGHT
+                preview_quality = TRACKING_PREVIEW_QUALITY
+            else:
+                preview_interval_ms = IDLE_PREVIEW_INTERVAL_MS
+                preview_width = IDLE_PREVIEW_WIDTH
+                preview_height = IDLE_PREVIEW_HEIGHT
+                preview_quality = IDLE_PREVIEW_QUALITY
+            was_tracking = gesture_command.should_track
         # run
         if gesture_command.should_track:
             gimbal.run(err_pitch, err_roll, pitch_reverse = pitch_reverse, roll_reverse=roll_reverse)
@@ -482,6 +548,17 @@ if __name__ == '__main__':
                     )
                 elif target.selected_instrument == "piano" and target.last_note_midi:
                     instrument_output.play_note(target.selected_instrument, target.last_note_midi)
+
+        # 吉他模式下持续同步当前和弦到后端（自动扫弦需要）
+        if (
+            target.selected_instrument in ("electric_guitar", "acoustic_guitar")
+            and ltime - last_chord_send_ms >= 100
+        ):
+            instrument_output.send_chord_state(
+                target.selected_instrument,
+                target.last_guitar_chord or "",
+            )
+            last_chord_send_ms = ltime
 
         # Calculate FPS.
         rtime = time.ticks_ms()

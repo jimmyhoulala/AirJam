@@ -63,9 +63,28 @@ const Camera = (() => {
     }
   }
 
+  let _prevObjectUrl = null;
+
   function setFrame(dataUrl) {
     if (!frameEl || !dataUrl) return;
-    frameEl.src = dataUrl;
+    // 将 base64 data URL 转为 Blob URL，减少浏览器解码开销
+    if (dataUrl.startsWith('data:')) {
+      try {
+        const parts = dataUrl.split(',');
+        const mime = parts[0].match(/:(.*?);/)[1];
+        const raw = atob(parts[1]);
+        const arr = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+        const blob = new Blob([arr], { type: mime });
+        if (_prevObjectUrl) URL.revokeObjectURL(_prevObjectUrl);
+        _prevObjectUrl = URL.createObjectURL(blob);
+        frameEl.src = _prevObjectUrl;
+      } catch (e) {
+        frameEl.src = dataUrl;
+      }
+    } else {
+      frameEl.src = dataUrl;
+    }
     setBridgeActive(true);
   }
 

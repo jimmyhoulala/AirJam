@@ -19,6 +19,7 @@ if str(HARDWARE_APP_DIR) not in sys.path:
     sys.path.insert(0, str(HARDWARE_APP_DIR))
 
 from face_tracking.note_output import (  # noqa: E402
+    parse_chord_state_event,
     parse_drum_hit_event,
     parse_guitar_chord_event,
     parse_heartbeat_event,
@@ -103,6 +104,85 @@ ACOUSTIC_GUITAR_CHORDS = {
 
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
+# 经典流行吉他扫弦节奏型（8分音符网格，每小节8个slot）
+# "D . D U . U D U" — 最常用的流行/摇滚扫弦模式
+# 每个元素: (方向, 力度系数) 或 None 表示空拍（手在动但不触弦）
+AUTO_STRUM_PATTERNS = {
+    "pop": {
+        "label": "流行",
+        "notation": "D . D U . U D U",
+        "steps": [
+            ("down", 1.0),    # 第1拍   — 强下扫
+            None,              # 第1拍&  — 空拍
+            ("down", 0.8),    # 第2拍   — 中下扫
+            ("up", 0.45),     # 第2拍&  — 轻上扫
+            None,              # 第3拍   — 空拍（节奏呼吸）
+            ("up", 0.5),      # 第3拍&  — 轻上扫
+            ("down", 0.85),   # 第4拍   — 中强下扫
+            ("up", 0.4),      # 第4拍&  — 轻上扫
+        ],
+    },
+    "folk": {
+        "label": "民谣",
+        "notation": "D D . U . U D U",
+        "steps": [
+            ("down", 0.95),   # 第1拍   — 强下扫（重拍）
+            ("down", 0.7),    # 第1拍&  — 中下扫（交替bass感）
+            None,              # 第2拍   — 空拍
+            ("up", 0.45),     # 第2拍&  — 轻上扫
+            None,              # 第3拍   — 空拍
+            ("up", 0.5),      # 第3拍&  — 轻上扫
+            ("down", 0.8),    # 第4拍   — 中下扫
+            ("up", 0.4),      # 第4拍&  — 轻上扫
+        ],
+    },
+    "rock": {
+        "label": "摇滚",
+        "notation": "D . D . D U D U",
+        "steps": [
+            ("down", 1.0),    # 第1拍   — 重下扫
+            None,              # 第1拍&  — 空拍
+            ("down", 0.9),    # 第2拍   — 强下扫
+            None,              # 第2拍&  — 空拍
+            ("down", 0.85),   # 第3拍   — 中强下扫
+            ("up", 0.5),      # 第3拍&  — 轻上扫
+            ("down", 0.8),    # 第4拍   — 中下扫
+            ("up", 0.45),     # 第4拍&  — 轻上扫
+        ],
+    },
+    "reggae": {
+        "label": "雷鬼",
+        "notation": ". D . D . D . D",
+        "steps": [
+            None,              # 第1拍   — 空拍（反拍风格）
+            ("down", 0.75),   # 第1拍&  — 反拍下扫
+            None,              # 第2拍   — 空拍
+            ("up", 0.55),     # 第2拍&  — 反拍上扫
+            None,              # 第3拍   — 空拍
+            ("down", 0.7),    # 第3拍&  — 反拍下扫
+            None,              # 第4拍   — 空拍
+            ("up", 0.5),      # 第4拍&  — 反拍上扫
+        ],
+    },
+    "ballad": {
+        "label": "慢摇",
+        "notation": "D . . . D U . U",
+        "steps": [
+            ("down", 1.0),    # 第1拍   — 强下扫（呼吸感）
+            None,              # 第1拍&  — 空拍
+            None,              # 第2拍   — 空拍
+            None,              # 第2拍&  — 空拍
+            ("down", 0.8),    # 第3拍   — 中下扫
+            ("up", 0.45),     # 第3拍&  — 轻上扫
+            None,              # 第4拍   — 空拍
+            ("up", 0.4),      # 第4拍&  — 轻上扫
+        ],
+    },
+}
+
+# 保持向后兼容
+AUTO_STRUM_PATTERN = AUTO_STRUM_PATTERNS["pop"]["steps"]
+
 
 class InstrumentSynthServer:
     def __init__(
@@ -163,15 +243,15 @@ class InstrumentSynthServer:
         if self.synth and instrument in CHANNELS:
             self.synth.play_note(CHANNELS[instrument], midi, duration_ms)
 
-    def play_guitar_chord(self, instrument, chord, direction):
-        if instrument == "electric_guitar" and self.electric_samples.play(chord, direction):
+    def play_guitar_chord(self, instrument, chord, direction, velocity=1.0):
+        if instrument == "electric_guitar" and self.electric_samples.play(chord, direction, volume=velocity):
             return
-        if instrument == "acoustic_guitar" and self.acoustic_samples.play(chord, direction):
+        if instrument == "acoustic_guitar" and self.acoustic_samples.play(chord, direction, volume=velocity):
             return
         if self.synth:
             notes = _notes_for_guitar_chord(instrument, chord)
             if notes:
-                self.synth.strum_notes(CHANNELS[instrument], notes, direction)
+                self.synth.strum_notes(CHANNELS[instrument], notes, direction, velocity=velocity)
 
     def close(self):
         self.wave_player.close()
@@ -233,9 +313,10 @@ class FluidSynthFallback:
         self.synth.noteon(channel, midi, velocity)
         threading.Thread(target=self._noteoff_later, args=(channel, midi, duration_ms), daemon=True).start()
 
-    def strum_notes(self, channel, notes, direction):
+    def strum_notes(self, channel, notes, direction, velocity=1.0):
         ordered = notes if direction == "down" else list(reversed(notes))
-        threading.Thread(target=self._strum_notes, args=(channel, ordered), daemon=True).start()
+        midi_velocity = max(1, int(127 * velocity))
+        threading.Thread(target=self._strum_notes, args=(channel, ordered, midi_velocity), daemon=True).start()
 
     def close(self):
         self.synth.delete()
@@ -244,10 +325,10 @@ class FluidSynthFallback:
         time.sleep(duration_ms / 1000)
         self.synth.noteoff(channel, midi)
 
-    def _strum_notes(self, channel, notes):
+    def _strum_notes(self, channel, notes, velocity=127):
         active = []
         for midi in notes:
-            self.synth.noteon(channel, midi, 127)
+            self.synth.noteon(channel, midi, velocity)
             active.append(midi)
             time.sleep(0.018)
         time.sleep(0.22)
@@ -261,9 +342,9 @@ class SystemWavePlayer:
         self._sound_cache = {}
         self._init_pygame()
 
-    def play(self, path):
+    def play(self, path, volume=1.0):
         path = Path(path)
-        if self._play_with_pygame(path):
+        if self._play_with_pygame(path, volume=volume):
             return
         _play_with_system_player(path)
 
@@ -284,7 +365,7 @@ class SystemWavePlayer:
             self._pygame = None
             print(f"pygame audio backend unavailable: {exc}")
 
-    def _play_with_pygame(self, path):
+    def _play_with_pygame(self, path, volume=1.0):
         if not self._pygame:
             return False
         try:
@@ -292,7 +373,9 @@ class SystemWavePlayer:
             if sound is None:
                 sound = self._pygame.mixer.Sound(str(path))
                 self._sound_cache[path] = sound
-            sound.play()
+            channel = sound.play()
+            if channel and volume < 1.0:
+                channel.set_volume(max(0.0, min(1.0, volume)))
             return True
         except Exception as exc:
             print(f"pygame failed for {path}: {exc}")
@@ -310,11 +393,11 @@ class WaveSampleBank:
             for direction in ("down", "up")
         }
 
-    def play(self, chord, direction):
+    def play(self, chord, direction, volume=1.0):
         path = self.samples.get((chord, direction))
         if path is None or not path.exists():
             return False
-        self.player(path)
+        self.player(path, volume=volume)
         return True
 
 
@@ -357,6 +440,13 @@ class HardwareEventRouter:
     last_address: tuple | None = None
     current_mode: str = "selecting"
     frame_assembler: object = None
+    # 自动扫弦状态
+    auto_strum_enabled: bool = False
+    auto_strum_bpm: int = 120
+    auto_strum_pattern: str = "pop"
+    current_guitar_instrument: str | None = None
+    current_guitar_chord: str | None = None
+    auto_strum_step: int = 0  # 当前在节奏型中的位置（0-7）
 
     def __post_init__(self):
         if self.frame_assembler is None:
@@ -373,6 +463,13 @@ class HardwareEventRouter:
         heartbeat = parse_heartbeat_event(payload)
         if heartbeat:
             self.current_mode = heartbeat.mode or self.current_mode
+            return [self.status_message()]
+
+        # 和弦状态同步（不触发播放，仅供自动扫弦使用）
+        chord_state = parse_chord_state_event(payload)
+        if chord_state:
+            self.current_guitar_instrument = chord_state["instrument"]
+            self.current_guitar_chord = chord_state["chord"] or None
             return [self.status_message()]
 
         mode = parse_mode_event(payload)
@@ -428,6 +525,8 @@ class HardwareEventRouter:
         guitar = parse_guitar_chord_event(payload)
         if guitar:
             self.current_mode = guitar.instrument
+            self.current_guitar_instrument = guitar.instrument
+            self.current_guitar_chord = guitar.chord
             print(f"hardware guitar {guitar.instrument} {guitar.chord} {guitar.direction} from {address}")
             self.audio.play_guitar_chord(guitar.instrument, guitar.chord, guitar.direction)
             notes = _notes_for_guitar_chord(guitar.instrument, guitar.chord) or []
@@ -463,6 +562,91 @@ class HardwareEventRouter:
             "address": f"{host}:{port}",
             "mode": self.current_mode,
         }
+
+    def set_auto_strum(self, enabled, bpm=None):
+        """Toggle auto-strum mode and optionally set BPM."""
+        self.auto_strum_enabled = enabled
+        if bpm is not None:
+            self.auto_strum_bpm = max(40, min(240, bpm))
+        # 开启或切BPM时从头开始节奏型
+        self.auto_strum_step = 0
+        state = "ON" if enabled else "OFF"
+        print(f"自动扫弦: {state}, BPM: {self.auto_strum_bpm}")
+
+    def set_strum_pattern(self, pattern_name):
+        """Switch to a named strumming pattern."""
+        if pattern_name not in AUTO_STRUM_PATTERNS:
+            print(f"未知节奏型: {pattern_name}")
+            return False
+        self.auto_strum_pattern = pattern_name
+        self.auto_strum_step = 0
+        label = AUTO_STRUM_PATTERNS[pattern_name]["label"]
+        notation = AUTO_STRUM_PATTERNS[pattern_name]["notation"]
+        print(f"节奏型切换: {label} ({pattern_name}) — {notation}")
+        return True
+
+    def auto_strum_tick(self):
+        """Play one strum step from the rhythm pattern. Returns chord event dict or None.
+
+        Uses the currently selected pattern from AUTO_STRUM_PATTERNS
+        with varying velocity per step for a natural feel.
+        """
+        if not self.auto_strum_enabled:
+            return None
+        if self.current_mode not in ("electric_guitar", "acoustic_guitar"):
+            return None
+        if not self.current_guitar_chord:
+            return None
+
+        pattern = AUTO_STRUM_PATTERNS.get(self.auto_strum_pattern, AUTO_STRUM_PATTERNS["pop"])
+        steps = pattern["steps"]
+        pattern_len = len(steps)
+        step_data = steps[self.auto_strum_step % pattern_len]
+
+        # 推进到下一个slot
+        self.auto_strum_step = (self.auto_strum_step + 1) % pattern_len
+
+        # 空拍 — 手在动但不触弦，不发声
+        if step_data is None:
+            return None
+
+        direction, velocity_scale = step_data
+        instrument = self.current_guitar_instrument or self.current_mode
+        chord = self.current_guitar_chord
+
+        self.audio.play_guitar_chord(instrument, chord, direction, velocity=velocity_scale)
+        notes = _notes_for_guitar_chord(instrument, chord) or []
+        return {
+            "type": "chord",
+            "instrument": instrument,
+            "root": chord,
+            "quality": "strum",
+            "qualityLabel": direction,
+            "chord": f"{chord} {direction}",
+            "midiNotes": notes,
+            "frequencies": [midi_to_frequency(midi) for midi in notes],
+            "muted": False,
+            "velocity": velocity_scale,
+        }
+
+    def send_mode(self, instrument):
+        """Send MODE command to MaixCam via UDP (port 5021)."""
+        if not self.last_address:
+            print("无法发送 MODE：硬件地址未知")
+            return False
+        # 发送到 MaixCam 的命令端口 5021，而非源端口
+        host = self.last_address[0]
+        target = (host, 5021)
+        payload = f"MODE|{instrument}".encode("ascii")
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.sendto(payload, target)
+            sock.close()
+            print(f"已发送 MODE|{instrument} 到 {target}")
+            return True
+        except Exception as exc:
+            print(f"发送 MODE 失败: {exc}")
+            return False
 
     def _mark_seen(self, address):
         self.last_seen = time.monotonic()
@@ -562,6 +746,21 @@ async def hardware_presence_loop(router, broadcast_callback, interval=1.0):
         await asyncio.sleep(interval)
 
 
+async def auto_strum_loop(router, broadcast_callback):
+    """自动扫弦定时循环 — 以8分音符为最小单位驱动节奏型"""
+    while True:
+        if router.auto_strum_enabled and router.current_mode in ("electric_guitar", "acoustic_guitar"):
+            # 8分音符间隔 = 半拍 = 60/BPM/2
+            interval = 30.0 / router.auto_strum_bpm
+            event = router.auto_strum_tick()
+            if event:
+                await broadcast_callback(router.status_message())
+                await broadcast_callback(event)
+            await asyncio.sleep(interval)
+        else:
+            await asyncio.sleep(0.2)
+
+
 def serve(
     host,
     port,
@@ -592,7 +791,7 @@ def serve(
     print(f"Instrument server listening on {host}:{port}")
     try:
         while True:
-            payload, address = sock.recvfrom(256)
+            payload, address = sock.recvfrom(65536)
             for message in router.handle_payload(payload, address):
                 print(message)
     except KeyboardInterrupt:
@@ -663,7 +862,7 @@ def _load_program(synth, path, channel, bank, preset, label, required=True):
     return True
 
 
-def _play_with_system_player(path):
+def _play_with_system_player(path, **kwargs):
     if os.name == "nt":
         import winsound
 

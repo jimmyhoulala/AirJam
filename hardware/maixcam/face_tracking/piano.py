@@ -184,16 +184,15 @@ def create_touch_piano_layout(width, height, octave=4, y=0, key_height=None):
 
 
 class PianoModeController:
-    def __init__(self, width, height, y=0, key_height=None, default_octave=3, cooldown_ms=100):
+    def __init__(self, width, height, y=0, key_height=None, default_octave=3):
         self.width = width
         self.height = height
         self.y = y
         self.key_height = key_height if key_height is not None else height
-        self.cooldown_ms = cooldown_ms
         self.selected_octave = default_octave
         self.layout = create_touch_piano_layout(width, self.key_height, LEFT_HAND_OCTAVES[default_octave], y=y)
-        self.last_midi = None
-        self.cooldown_until = 0
+        self.active_midi = None       # 当前手指按下的琴键
+        self.touched_midi = None      # 已触发过的琴键（离开后才重置）
 
     def update_left(self, number):
         if number not in LEFT_HAND_OCTAVES:
@@ -205,24 +204,28 @@ class PianoModeController:
             LEFT_HAND_OCTAVES[number],
             y=self.y,
         )
-        self.last_midi = None
-        self.cooldown_until = 0
+        self.active_midi = None
+        self.touched_midi = None
         return number
 
     def update_right(self, points, now_ms):
         landmarks = normalize_landmarks(points)
         if len(landmarks) != 21:
-            self.last_midi = None
+            self.active_midi = None
+            self.touched_midi = None
             return None
         px, py = index_touch_point(landmarks)
         key = self.layout.key_at(px, py)
         if not key:
-            self.last_midi = None
+            # 手指离开琴键区域，重置
+            self.active_midi = None
+            self.touched_midi = None
             return None
-        if key.midi == self.last_midi and now_ms < self.cooldown_until:
+        self.active_midi = key.midi
+        # 只在第一次碰到新琴键时触发
+        if key.midi == self.touched_midi:
             return None
-        self.last_midi = key.midi
-        self.cooldown_until = now_ms + self.cooldown_ms
+        self.touched_midi = key.midi
         return key.midi
 
 

@@ -51,6 +51,19 @@ const Instrument = (() => {
 
     currentInstrument = instrument;
 
+    // 切换主题
+    const THEME_MAP = {
+      piano: 'theme-piano',
+      electric_guitar: 'theme-electric_guitar',
+      acoustic_guitar: 'theme-acoustic_guitar',
+      drums: 'theme-drums',
+    };
+    // 移除旧主题
+    Object.values(THEME_MAP).forEach(cls => document.body.classList.remove(cls));
+    // 添加新主题
+    const themeClass = THEME_MAP[instrument];
+    if (themeClass) document.body.classList.add(themeClass);
+
     // 更新 UI
     const cards = gridEl.querySelectorAll('.instrument-card');
     cards.forEach(card => {

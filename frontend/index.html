@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>隔空弹奏乐器</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
   <!-- Header -->
@@ -100,6 +103,29 @@
             <span class="instrument-name">鼓</span>
           </button>
         </div>
+        <!-- 自动扫弦（仅吉他模式可见） -->
+        <div class="auto-strum-bar" id="autoStrumBar">
+          <button class="auto-strum-toggle" id="autoStrumToggle">
+            <span class="auto-strum-dot"></span>
+            <span class="auto-strum-label">自动扫弦</span>
+          </button>
+          <div class="auto-strum-bpm">
+            <button class="bpm-btn" id="bpmDown">−</button>
+            <span class="bpm-value" id="bpmValue">120</span>
+            <span class="bpm-unit">BPM</span>
+            <button class="bpm-btn" id="bpmUp">+</button>
+          </div>
+          <div class="strum-pattern-bar" id="strumPatternBar">
+            <span class="strum-pattern-label">节奏型</span>
+            <div class="strum-pattern-tabs" id="strumPatternTabs">
+              <span class="strum-pattern-tab active" data-pattern="pop">流行</span>
+              <span class="strum-pattern-tab" data-pattern="folk">民谣</span>
+              <span class="strum-pattern-tab" data-pattern="rock">摇滚</span>
+              <span class="strum-pattern-tab" data-pattern="reggae">雷鬼</span>
+              <span class="strum-pattern-tab" data-pattern="ballad">慢摇</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Mapping -->
@@ -190,13 +216,13 @@
     </div>
   </footer>
 
-  <script src="js/ws.js"></script>
-  <script src="js/camera.js"></script>
-  <script src="js/gesture.js"></script>
-  <script src="js/audio.js"></script>
-  <script src="js/instrument.js"></script>
-  <script src="js/player.js"></script>
-  <script src="js/status.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/ws.js?v=2"></script>
+  <script src="js/camera.js?v=2"></script>
+  <script src="js/gesture.js?v=2"></script>
+  <script src="js/audio.js?v=2"></script>
+  <script src="js/instrument.js?v=2"></script>
+  <script src="js/player.js?v=2"></script>
+  <script src="js/status.js?v=2"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>

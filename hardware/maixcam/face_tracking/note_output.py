@@ -51,7 +51,10 @@ class UdpNoteOutput:
 
     def play_midi(self, midi, duration_ms=160):
         payload = f"NOTE {int(midi)} {int(duration_ms)}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
 
@@ -62,12 +65,18 @@ class UdpDrumOutput:
 
     def play_hit(self, drum, articulation, velocity, power):
         payload = f"HIT|{drum}|{articulation}|{velocity}|{int(power)}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
     def play_simple_hit(self, drum):
         payload = f"HIT|{drum}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
 
@@ -79,27 +88,51 @@ class UdpInstrumentOutput:
 
     def set_mode(self, instrument):
         payload = f"MODE|{instrument}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
     def play_note(self, instrument, midi, duration_ms=160):
         payload = f"NOTE|{instrument}|{int(midi)}|{int(duration_ms)}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
     def play_hit(self, drum, articulation, velocity, power):
         payload = f"HIT|{drum}|{articulation}|{velocity}|{int(power)}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
     def play_guitar_chord(self, instrument, chord, direction):
         payload = f"GUITAR|{instrument}|{chord}|{direction}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
+        return True
+
+    def send_chord_state(self, instrument, chord):
+        """发送当前和弦状态到后端（不触发播放，供自动扫弦使用）"""
+        payload = f"CHORD_STATE|{instrument}|{chord}".encode("ascii")
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
     def heartbeat(self, mode="-"):
         payload = f"PING|maixcam|{mode or '-'}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
     def send_frame(self, frame_bytes):
@@ -111,12 +144,18 @@ class UdpInstrumentOutput:
             start = index * FRAME_CHUNK_SIZE
             chunk = frame_bytes[start:start + FRAME_CHUNK_SIZE]
             header = f"FRAME|{self._frame_sequence}|{index}|{total}|".encode("ascii")
-            self.socket.sendto(header + chunk, self.address)
+            try:
+                self.socket.sendto(header + chunk, self.address)
+            except OSError:
+                return False
         return True
 
     def play_simple_hit(self, drum):
         payload = f"HIT|{drum}".encode("ascii")
-        self.socket.sendto(payload, self.address)
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError:
+            return False
         return True
 
 
@@ -134,6 +173,20 @@ def parse_note_event(message):
     if not 0 <= midi <= 127 or duration_ms <= 0:
         return None
     return NoteEvent(midi=midi, duration_ms=duration_ms)
+
+
+def parse_chord_state_event(message):
+    """解析 CHORD_STATE 消息（仅更新和弦状态，不触发播放）"""
+    if isinstance(message, bytes):
+        message = message.decode("ascii", "ignore")
+    parts = str(message).strip().split("|")
+    if len(parts) != 3 or parts[0] != "CHORD_STATE":
+        return None
+    instrument = parts[1]
+    chord = parts[2]
+    if instrument not in GUITAR_INSTRUMENTS:
+        return None
+    return {"instrument": instrument, "chord": chord}
 
 
 def parse_mode_event(message):

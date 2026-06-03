@@ -16,7 +16,7 @@
   --text-2: oklch(0.68 0.02 270);        /* 次要文本 */
   --text-3: oklch(0.48 0.02 270);        /* 弱化文本 */
 
-  /* Accent - 霓虹紫蓝 */
+  /* Accent - 默认靛紫（未选择乐器时） */
   --accent: oklch(0.65 0.22 280);        /* 主强调色 */
   --accent-dim: oklch(0.55 0.18 280);    /* 次要强调 */
   --accent-glow: oklch(0.65 0.22 280 / 0.25);  /* 光晕 */
@@ -63,6 +63,43 @@
   --duration-fast: 120ms;
   --duration-normal: 200ms;
   --duration-slow: 350ms;
+}
+
+/* ===== 乐器主题 ===== */
+/* 钢琴 - 靛紫 */
+body.theme-piano {
+  --accent: oklch(0.65 0.22 280);
+  --accent-dim: oklch(0.55 0.18 280);
+  --accent-glow: oklch(0.65 0.22 280 / 0.25);
+  --accent-glow-strong: oklch(0.65 0.22 280 / 0.4);
+  --border-accent: oklch(0.65 0.22 280 / 0.3);
+}
+
+/* 电吉他 - 电光青 */
+body.theme-electric_guitar {
+  --accent: oklch(0.72 0.18 200);
+  --accent-dim: oklch(0.60 0.14 200);
+  --accent-glow: oklch(0.72 0.18 200 / 0.25);
+  --accent-glow-strong: oklch(0.72 0.18 200 / 0.4);
+  --border-accent: oklch(0.72 0.18 200 / 0.3);
+}
+
+/* 木吉他 - 琥珀暖光 */
+body.theme-acoustic_guitar {
+  --accent: oklch(0.78 0.16 55);
+  --accent-dim: oklch(0.65 0.13 55);
+  --accent-glow: oklch(0.78 0.16 55 / 0.25);
+  --accent-glow-strong: oklch(0.78 0.16 55 / 0.4);
+  --border-accent: oklch(0.78 0.16 55 / 0.3);
+}
+
+/* 鼓 - 烈焰橙红 */
+body.theme-drums {
+  --accent: oklch(0.68 0.22 15);
+  --accent-dim: oklch(0.58 0.18 15);
+  --accent-glow: oklch(0.68 0.22 15 / 0.25);
+  --accent-glow-strong: oklch(0.68 0.22 15 / 0.4);
+  --border-accent: oklch(0.68 0.22 15 / 0.3);
 }
 
 /* ===== Reset ===== */
@@ -225,7 +262,7 @@ body {
 .hardware-frame {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   display: block;
   background: var(--surface-0);
 }
@@ -279,14 +316,15 @@ body {
   }
 }
 
-/* Note colors by pitch */
-.floating-note[data-note*="C"] { color: oklch(0.70 0.20 280); }
-.floating-note[data-note*="D"] { color: oklch(0.70 0.18 320); }
-.floating-note[data-note*="E"] { color: oklch(0.70 0.20 20); }
-.floating-note[data-note*="F"] { color: oklch(0.70 0.18 60); }
-.floating-note[data-note*="G"] { color: oklch(0.70 0.18 150); }
-.floating-note[data-note*="A"] { color: oklch(0.70 0.15 240); }
-.floating-note[data-note*="B"] { color: oklch(0.70 0.20 300); }
+/* Note colors - 跟随乐器主题 */
+.floating-note[data-note*="C"] { color: var(--accent); }
+.floating-note[data-note*="D"] { color: var(--accent); opacity: 0.85; }
+.floating-note[data-note*="E"] { color: var(--accent-dim); }
+.floating-note[data-note*="F"] { color: var(--accent); opacity: 0.75; }
+.floating-note[data-note*="G"] { color: var(--accent-dim); opacity: 0.9; }
+.floating-note[data-note*="A"] { color: var(--accent); opacity: 0.7; }
+.floating-note[data-note*="B"] { color: var(--accent-dim); opacity: 0.8; }
+.floating-note { filter: drop-shadow(0 0 8px var(--accent-glow)); }
 
 .camera-overlay {
   position: absolute;
@@ -473,9 +511,23 @@ body {
 
 .instrument-card.active {
   border-color: var(--accent);
-  background: oklch(0.18 0.06 280);
+  background: var(--surface-3);
   color: var(--text-1);
-  box-shadow: 0 0 20px var(--accent-glow), inset 0 1px 0 oklch(0.70 0.22 280 / 0.1);
+  box-shadow: 0 0 20px var(--accent-glow), inset 0 1px 0 var(--accent-glow);
+}
+
+/* 乐器卡片各自的激活背景 */
+body.theme-piano .instrument-card[data-instrument="piano"].active {
+  background: oklch(0.18 0.06 280);
+}
+body.theme-electric_guitar .instrument-card[data-instrument="electric_guitar"].active {
+  background: oklch(0.18 0.05 200);
+}
+body.theme-acoustic_guitar .instrument-card[data-instrument="acoustic_guitar"].active {
+  background: oklch(0.18 0.05 55);
+}
+body.theme-drums .instrument-card[data-instrument="drums"].active {
+  background: oklch(0.18 0.06 15);
 }
 
 .instrument-card.active::after {
@@ -541,6 +593,157 @@ body {
 .instrument-name {
   font-size: 0.78rem;
   font-weight: 500;
+}
+
+/* ===== Auto Strum ===== */
+.auto-strum-bar {
+  display: none;
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  gap: var(--sp-3);
+  flex-direction: column;
+}
+
+.auto-strum-bar.visible {
+  display: flex;
+}
+
+.auto-strum-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 0.82rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  width: 100%;
+}
+
+.auto-strum-toggle:hover {
+  background: var(--surface-3);
+  border-color: var(--border-accent);
+}
+
+.auto-strum-toggle.active {
+  background: oklch(0.18 0.06 55);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.auto-strum-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.auto-strum-toggle.active .auto-strum-dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: statePulse 1.2s infinite;
+}
+
+.auto-strum-label {
+  flex: 1;
+  text-align: left;
+}
+
+.auto-strum-bpm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
+.bpm-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 1rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.bpm-btn:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+  border-color: var(--border-accent);
+}
+
+.bpm-value {
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+  min-width: 32px;
+  text-align: center;
+}
+
+.bpm-unit {
+  font-size: 0.7rem;
+  color: var(--text-3);
+}
+
+/* ===== Strum Pattern Tabs ===== */
+.strum-pattern-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.strum-pattern-label {
+  font-size: 0.8rem;
+  color: var(--text-3);
+}
+
+.strum-pattern-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.strum-pattern-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  background: var(--surface-2);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.strum-pattern-tab:hover {
+  color: var(--text-2);
+  border-color: var(--border-accent);
+}
+
+.strum-pattern-tab.active {
+  color: var(--text-1);
+  border-color: var(--accent);
+  background: oklch(0.18 0.06 280);
+  box-shadow: 0 0 12px var(--accent-glow);
 }
 
 /* ===== Performance Status ===== */
@@ -728,6 +931,13 @@ body {
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
   opacity: 0;
   transition: opacity var(--duration-normal);
+}
+
+body.theme-piano .gesture-card::before,
+body.theme-electric_guitar .gesture-card::before,
+body.theme-acoustic_guitar .gesture-card::before,
+body.theme-drums .gesture-card::before {
+  opacity: 1;
 }
 
 .gesture-card:hover::before {

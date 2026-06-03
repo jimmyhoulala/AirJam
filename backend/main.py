@@ -7,10 +7,11 @@ import asyncio
 from instrument_server import (
     HardwareEventRouter,
     InstrumentSynthServer,
+    auto_strum_loop,
     hardware_presence_loop,
     start_hardware_udp_server,
 )
-from ws_server import broadcast, start_server
+from ws_server import broadcast, set_hardware_router, start_server
 
 
 WS_HOST = "0.0.0.0"
@@ -29,6 +30,7 @@ async def run():
 
     audio = InstrumentSynthServer()
     router = HardwareEventRouter(audio)
+    set_hardware_router(router)
     udp_transport = await start_hardware_udp_server(
         HARDWARE_UDP_HOST,
         HARDWARE_UDP_PORT,
@@ -36,11 +38,13 @@ async def run():
         broadcast,
     )
     presence_task = asyncio.create_task(hardware_presence_loop(router, broadcast))
+    strum_task = asyncio.create_task(auto_strum_loop(router, broadcast))
 
     try:
         await start_server(host=WS_HOST, port=WS_PORT)
     finally:
         presence_task.cancel()
+        strum_task.cancel()
         udp_transport.close()
         audio.close()
 
