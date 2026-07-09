@@ -654,9 +654,16 @@ class HardwareEventRouter:
 
 
 class FrameAssembler:
-    def __init__(self, max_age_seconds=1.5):
+    def __init__(self, max_age_seconds=5.0):
         self.max_age_seconds = max_age_seconds
         self.frames = {}
+        self._last_log_time = 0
+        self._frame_count = 0
+        self._chunk_count = 0
+        self._drop_count = 0
+        # FPS tracking
+        self._fps_timestamps = []
+        self._fps_value = 0
 
     def accept(self, payload, address):
         if not isinstance(payload, bytes) or not payload.startswith(b"FRAME|"):
@@ -673,6 +680,7 @@ class FrameAssembler:
         if total <= 0 or index < 0 or index >= total:
             return False
 
+        self._chunk_count += 1
         now = time.monotonic()
         self._drop_stale(now)
         key = (address, sequence)
@@ -686,6 +694,7 @@ class FrameAssembler:
         )
         if state["total"] != total:
             self.frames.pop(key, None)
+            self._drop_count += 1
             return False
         state["chunks"][index] = parts[4]
         if len(state["chunks"]) != total:
@@ -694,7 +703,24 @@ class FrameAssembler:
         data = b"".join(state["chunks"][chunk_index] for chunk_index in range(total))
         self.frames.pop(key, None)
         if not data.startswith(b"\xff\xd8"):
+            self._drop_count += 1
             return False
+        self._frame_count += 1
+        # FPS tracking: 记录帧时间戳，计算每秒帧数
+        self._fps_timestamps.append(now)
+        # 保留最近 2 秒的时间戳
+        cutoff = now - 2.0
+        self._fps_timestamps = [t for t in self._fps_timestamps if t > cutoff]
+        if len(self._fps_timestamps) >= 2:
+            span = self._fps_timestamps[-1] - self._fps_timestamps[0]
+            if span > 0:
+                self._fps_value = round(len(self._fps_timestamps) / span)
+        # 每 5 秒打印一次帧统计
+        if now - self._last_log_time >= 5.0:
+            print(f"[FrameAssembler] 已接收 {self._frame_count} 帧, "
+                  f"{self._chunk_count} 块, 丢弃 {self._drop_count} 块, "
+                  f"待组装 {len(self.frames)} 帧, 来自 {address}, FPS: {self._fps_value}")
+            self._last_log_time = now
         encoded = base64.b64encode(data).decode("ascii")
         return {
             "type": "camera_frame",
@@ -702,6 +728,7 @@ class FrameAssembler:
             "dataUrl": f"data:image/jpeg;base64,{encoded}",
             "sequence": sequence,
             "bytes": len(data),
+            "fps": self._fps_value,
         }
 
     def _drop_stale(self, now):
@@ -712,6 +739,7 @@ class FrameAssembler:
         ]
         for key in stale_keys:
             self.frames.pop(key, None)
+            self._drop_count += 1
 
 
 class HardwareUdpProtocol(asyncio.DatagramProtocol):

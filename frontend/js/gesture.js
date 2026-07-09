@@ -30,10 +30,10 @@ const Gesture = (() => {
 
   // 乐器主题色（与 CSS 同步）
   const THEME_COLORS = {
-    piano:            { h: 280, accent: '#a78bfa', glow: 'rgba(167,139,250,', zone: 'rgba(140,100,255,' },
-    electric_guitar:  { h: 200, accent: '#5bc0eb', glow: 'rgba(91,192,235,',   zone: 'rgba(60,170,220,' },
-    acoustic_guitar:  { h: 55,  accent: '#e8c547', glow: 'rgba(232,197,71,',   zone: 'rgba(210,180,60,' },
-    drums:            { h: 15,  accent: '#e85d4a', glow: 'rgba(232,93,74,',    zone: 'rgba(220,80,60,' },
+    piano:            { h: 250, accent: '#6090f0', glow: 'rgba(96,144,240,',  zone: 'rgba(80,130,230,' },
+    electric_guitar:  { h: 350, accent: '#f06080', glow: 'rgba(240,96,128,',  zone: 'rgba(230,80,110,' },
+    acoustic_guitar:  { h: 90,  accent: '#f0e040', glow: 'rgba(240,224,64,',  zone: 'rgba(230,210,50,' },
+    drums:            { h: 50,  accent: '#f0a040', glow: 'rgba(240,160,64,',  zone: 'rgba(230,145,50,' },
   };
 
   function getTheme() {
@@ -43,7 +43,7 @@ const Gesture = (() => {
 
   function getThemeParticles() {
     const t = getTheme();
-    return [t.accent, '#60a5fa', '#f472b6', '#34d399', '#fbbf24'];
+    return [t.accent, '#60d0f0', '#ff6b9d', '#50fa7b', '#ffd840', '#ff79c6'];
   }
 
   // 事件动效状态
@@ -123,35 +123,37 @@ const Gesture = (() => {
   }
 
   function spawnEventParticles(cx, cy) {
-    const count = 10 + Math.floor(Math.random() * 6);
+    const count = 6 + Math.floor(Math.random() * 4);
     const colors = getThemeParticles();
     for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
-      const speed = 1.2 + Math.random() * 2.5;
+      const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
+      const speed = 1.2 + Math.random() * 2;
       eventParticles.push({
         symbol: NOTE_SYMBOLS[Math.floor(Math.random() * NOTE_SYMBOLS.length)],
         x: cx,
         y: cy,
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 0.8,
+        vy: Math.sin(angle) * speed - 1.0,
         life: 1.0,
-        decay: 0.012 + Math.random() * 0.01,
-        size: 16 + Math.random() * 18,
+        decay: 0.015 + Math.random() * 0.01,
+        size: 14 + Math.random() * 12,
         color: colors[Math.floor(Math.random() * colors.length)],
         rotation: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.08,
+        rotSpeed: (Math.random() - 0.5) * 0.1,
       });
     }
   }
 
   function drawEventLabel(w, h) {
     const label = currentMeta.eventLabel || currentMeta.note || currentMeta.chord || '';
+    const labelX = w / 2;
+    const labelY = h * 0.78;
 
     // 新事件触发粒子爆发
     if (label && label !== lastEventLabel) {
       lastEventLabel = label;
       eventLabelAnim = { label, birth: performance.now(), life: 1.0 };
-      spawnEventParticles(w / 2, h / 2);
+      spawnEventParticles(labelX, labelY);
     }
 
     // 绘制粒子
@@ -170,45 +172,65 @@ const Gesture = (() => {
       canvasCtx.globalAlpha = p.life;
       canvasCtx.translate(p.x, p.y);
       canvasCtx.rotate(p.rotation);
-      canvasCtx.font = `${p.size}px system-ui, sans-serif`;
+      canvasCtx.font = `900 ${p.size}px Nunito, system-ui, sans-serif`;
       canvasCtx.textAlign = 'center';
       canvasCtx.textBaseline = 'middle';
       canvasCtx.shadowColor = p.color;
-      canvasCtx.shadowBlur = 12;
+      canvasCtx.shadowBlur = 10;
       canvasCtx.fillStyle = p.color;
       canvasCtx.fillText(p.symbol, 0, 0);
       canvasCtx.restore();
     }
 
-    // 绘制事件标签（弹入 + 淡出）
+    // 绘制事件标签（标题风格：accent色 + 光晕 + 立体描边）
     if (eventLabelAnim) {
       const elapsed = (performance.now() - eventLabelAnim.birth) / 1000;
       if (elapsed > 2.0) {
         eventLabelAnim = null;
       } else {
         let alpha;
-        if (elapsed < 0.15) {
-          alpha = elapsed / 0.15;
+        if (elapsed < 0.12) {
+          alpha = elapsed / 0.12;
         } else if (elapsed > 1.5) {
           alpha = 1 - (elapsed - 1.5) / 0.5;
         } else {
           alpha = 1;
         }
-        const scale = elapsed < 0.15 ? 0.5 + 0.5 * (elapsed / 0.15) : 1.0;
+        // 弹性缩放
+        let scale;
+        if (elapsed < 0.08) {
+          scale = 0.6 + 0.6 * (elapsed / 0.08);
+        } else if (elapsed < 0.16) {
+          scale = 1.2 - 0.2 * ((elapsed - 0.08) / 0.08);
+        } else {
+          scale = 1.0;
+        }
         alpha = Math.max(0, Math.min(1, alpha));
+
+        const theme = getTheme();
+        const fontSize = 36;
 
         canvasCtx.save();
         canvasCtx.globalAlpha = alpha;
-        canvasCtx.translate(w / 2, h / 2);
+        canvasCtx.translate(labelX, labelY);
         canvasCtx.scale(scale, scale);
-        const theme = getTheme();
-        canvasCtx.font = '700 42px system-ui, sans-serif';
+        canvasCtx.font = `900 ${fontSize}px Nunito, system-ui, sans-serif`;
         canvasCtx.textAlign = 'center';
         canvasCtx.textBaseline = 'middle';
-        canvasCtx.shadowColor = theme.glow + '0.6)';
-        canvasCtx.shadowBlur = 20;
-        canvasCtx.fillStyle = 'rgba(235, 246, 255, 0.96)';
+
+        // 立体描边
+        canvasCtx.strokeStyle = 'rgba(8, 10, 30, 0.85)';
+        canvasCtx.lineWidth = 6;
+        canvasCtx.lineJoin = 'round';
+        canvasCtx.miterLimit = 2;
+        canvasCtx.strokeText(eventLabelAnim.label, 0, 0, w * 0.86);
+
+        // accent色填充 + 光晕（仿标题 Jam 风格）
+        canvasCtx.shadowColor = theme.glow + '0.7)';
+        canvasCtx.shadowBlur = 18;
+        canvasCtx.fillStyle = theme.accent;
         canvasCtx.fillText(eventLabelAnim.label, 0, 0, w * 0.86);
+
         canvasCtx.restore();
       }
     }

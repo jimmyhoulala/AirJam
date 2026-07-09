@@ -4,6 +4,7 @@ WebSocket 服务器
 """
 import asyncio
 import json
+import socket
 import websockets
 
 # 所有连接的客户端
@@ -11,6 +12,18 @@ clients = set()
 
 # 硬件路由器引用（由 main.py 设置）
 _hardware_router = None
+
+
+def get_local_ip():
+    """获取本机局域网 IP 地址"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
 
 def set_hardware_router(router):
@@ -58,6 +71,10 @@ def normalize_message(data):
             return None
         return {"type": "volume", "volume": volume}
 
+    # Ping-pong for latency measurement
+    if msg_type == "ping":
+        return {"type": "pong", "t": data.get("t")}
+
     return data
 
 
@@ -65,6 +82,19 @@ async def handler(websocket, path=None):
     clients.add(websocket)
     client_id = id(websocket)
     print(f"[+] 客户端已连接 (id={client_id}), 当前 {len(clients)} 个")
+
+    # 发送欢迎消息，包含后端 IP 地址（用于诊断）
+    local_ip = get_local_ip()
+    welcome = {
+        "type": "welcome",
+        "backend_ip": local_ip,
+        "hardware_port": 5020,
+        "message": f"后端已连接，本机 IP: {local_ip}，请确保 MaixCAM config.py 中 PC_SYNTH_HOST = \"{local_ip}\""
+    }
+    try:
+        await websocket.send(json.dumps(welcome, ensure_ascii=False))
+    except Exception:
+        pass
 
     try:
         async for message in websocket:

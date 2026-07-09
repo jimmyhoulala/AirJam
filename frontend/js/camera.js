@@ -54,12 +54,49 @@ const Camera = (() => {
     `;
   }
 
+  let _noFrameTimer = null;
+  let _noFrameAfterActiveTimer = null;
+
   function setBridgeActive(active) {
     if (!overlayEl) return;
     if (active) {
       overlayEl.classList.add('hidden');
+      if (_noFrameTimer) {
+        clearTimeout(_noFrameTimer);
+        _noFrameTimer = null;
+      }
+      // 硬件已连接但可能没有视频帧 — 8 秒后显示诊断提示
+      if (!_noFrameAfterActiveTimer) {
+        _noFrameAfterActiveTimer = setTimeout(() => {
+          if (!frameEl || !frameEl.src || frameEl.src === '' || frameEl.src === 'about:blank') {
+            const backendIpEl = document.getElementById('backendIp');
+            const ip = backendIpEl ? backendIpEl.textContent : '--';
+            showOverlayMsg(
+              '硬件已连接，但未收到视频帧',
+              'error',
+              `请检查: 1) MaixCAM config.py 中 PC_SYNTH_HOST="${ip}"  2) 防火墙是否放行 UDP 5020  3) MaixCAM 是否在同一网络`
+            );
+          }
+        }, 8000);
+      }
     } else {
       showOverlayMsg('等待 MaixCAM2 硬件事件', 'info', '后端会接收硬件 UDP 演奏数据');
+      if (_noFrameAfterActiveTimer) {
+        clearTimeout(_noFrameAfterActiveTimer);
+        _noFrameAfterActiveTimer = null;
+      }
+      // 5 秒后如果没有收到任何硬件事件，显示诊断提示
+      if (!_noFrameTimer) {
+        _noFrameTimer = setTimeout(() => {
+          const backendIpEl = document.getElementById('backendIp');
+          const ip = backendIpEl ? backendIpEl.textContent : '--';
+          showOverlayMsg(
+            '未收到硬件事件',
+            'error',
+            `请检查: 1) MaixCAM config.py 中 PC_SYNTH_HOST="${ip}"  2) 防火墙是否放行 UDP 5020  3) MaixCAM 是否在同一网络`
+          );
+        }, 5000);
+      }
     }
   }
 

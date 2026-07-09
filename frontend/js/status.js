@@ -4,22 +4,23 @@
  */
 const Status = (() => {
   let wsDotEl, wsLabelEl;
-  let hardwareDotEl, hardwareLabelEl;
+  let hardwareDotEl;
   let backendDotEl, backendLabelEl;
-  let eventEl, latencyEl;
+  let eventEl, latencyEl, frameCountEl;
 
   let latencyStart = 0;
   let eventCount = 0;
+  let frameCount = 0;
 
   function init() {
     wsDotEl = document.getElementById('wsStatus');
     wsLabelEl = document.getElementById('wsLabel');
     hardwareDotEl = document.getElementById('hardwareStatus');
-    hardwareLabelEl = document.getElementById('hardwareLabel');
     backendDotEl = document.getElementById('backendStatus');
     backendLabelEl = document.getElementById('backendLabel');
     eventEl = document.getElementById('eventDisplay');
     latencyEl = document.getElementById('latencyDisplay');
+    frameCountEl = document.getElementById('frameCountDisplay');
   }
 
   function setDot(dotEl, state) {
@@ -33,9 +34,8 @@ const Status = (() => {
     if (wsLabelEl) wsLabelEl.textContent = connected ? '在线' : '离线';
   }
 
-  function setHardware(connected, label = '') {
+  function setHardware(connected) {
     setDot(hardwareDotEl, connected ? 'connected' : 'warning');
-    if (hardwareLabelEl) hardwareLabelEl.textContent = connected ? (label || '在线') : '离线';
   }
 
   function setBackend(connected) {
@@ -68,5 +68,10 @@ const Status = (() => {
     if (latencyEl) latencyEl.textContent = ms + 'ms';
   }
 
-  return { init, setWebSocket, setHardware, setBackend, setFps, incrementEvents, startLatency, endLatency, setLatency };
+  function incrementFrames() {
+    frameCount += 1;
+    if (frameCountEl) frameCountEl.textContent = frameCount;
+  }
+
+  return { init, setWebSocket, setHardware, setBackend, setFps, incrementEvents, incrementFrames, startLatency, endLatency, setLatency };
 })();

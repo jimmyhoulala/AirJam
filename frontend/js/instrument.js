@@ -39,6 +39,9 @@ const Instrument = (() => {
         select(instrument);
       });
     });
+
+    // 页面加载时应用默认乐器主题
+    select('piano', { force: true });
   }
 
   /**
@@ -96,5 +99,20 @@ const Instrument = (() => {
     return INSTRUMENTS[id] || null;
   }
 
-  return { init, select, getCurrent, getInstrument, on };
+  /**
+   * 取消所有乐器选中状态
+   */
+  function deselectAll() {
+    if (!gridEl) return;
+    const cards = gridEl.querySelectorAll('.instrument-card');
+    cards.forEach(card => card.classList.remove('active'));
+    // 移除主题
+    const THEME_MAP = ['theme-piano', 'theme-electric_guitar', 'theme-acoustic_guitar', 'theme-drums'];
+    THEME_MAP.forEach(cls => document.body.classList.remove(cls));
+    // 更新状态显示
+    const nameEl = document.getElementById('currentInstrument');
+    if (nameEl) nameEl.textContent = '--';
+  }
+
+  return { init, select, getCurrent, getInstrument, deselectAll, on };
 })();

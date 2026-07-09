@@ -2,6 +2,12 @@
 
 AirJam 使用 MaixCAM2 的硬件摄像头完成手势识别，再把演奏事件通过 UDP 发给电脑。电脑端后端负责真实音频播放和 WebSocket 状态广播，浏览器前端只做舞台显示、状态反馈和可选演示，不再占用本机摄像头。
 
+## Demo
+
+<video src="https://raw.githubusercontent.com/jimmyhoulala/AirJam/main/docs/demo.mp4" controls width="100%"></video>
+
+[无法播放时直接打开 demo 视频](docs/demo.mp4)
+
 ## 架构
 
 ```
@@ -29,10 +35,23 @@ frontend/
   index.html              # 浏览器舞台
   js/                     # WebSocket、舞台显示、状态和可选本地音频
 
+docs/
+  PRODUCT.md              # 产品定位和设计原则
+  HARDWARE.md             # MaixCAM2 硬件接入说明
+  GESTURE.md              # 手势识别与演奏映射
+  demo.mp4                # GitHub README 演示视频
+
 hardware/
   maixcam/                # 真实 MaixCAM2 端代码
   pc_runtime/instruments/ # 钢琴、木吉他、电吉他、鼓音色与预渲染 WAV
 ```
+
+## 文档
+
+- [产品说明](docs/PRODUCT.md)
+- [硬件接入文档](docs/HARDWARE.md)
+- [手势识别说明](docs/GESTURE.md)
+- [演示视频](docs/demo.mp4)
 
 ## 快速启动
 
@@ -46,6 +65,7 @@ python -m pip install -r requirements.txt
 1. 启动后端：
 
 ```bash
+cd backend
 python main.py
 ```
 
@@ -123,3 +143,37 @@ http://localhost:8080/?mock=1
 http://localhost:8080/?mock=1&localAudio=1
 ```
 
+## 贡献者
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/jimmyhoulala">
+        <img src="https://github.com/jimmyhoulala.png?size=96" width="72" height="72" alt="jimmyhoulala" />
+        <br />
+        <sub><b>jimmyhoulala</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/yoyozii">
+        <img src="https://github.com/yoyozii.png?size=96" width="72" height="72" alt="yoyozii" />
+        <br />
+        <sub><b>yoyozii</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/nofish777">
+        <img src="https://github.com/nofish777.png?size=96" width="72" height="72" alt="nofish777" />
+        <br />
+        <sub><b>nofish777</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Elory210">
+        <img src="https://github.com/Elory210.png?size=96" width="72" height="72" alt="Elory210" />
+        <br />
+        <sub><b>Elory210</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>

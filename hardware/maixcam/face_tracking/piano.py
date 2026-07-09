@@ -191,12 +191,14 @@ class PianoModeController:
         self.key_height = key_height if key_height is not None else height
         self.selected_octave = default_octave
         self.layout = create_touch_piano_layout(width, self.key_height, LEFT_HAND_OCTAVES[default_octave], y=y)
-        self.active_midi = None       # 当前手指按下的琴键
-        self.touched_midi = None      # 已触发过的琴键（离开后才重置）
+        self.active_midi_set = set()   # 当前所有按下琴键的 midi 集合
+        self._triggered = set()        # 已触发、尚未离开的琴键 midi 集合
 
     def update_left(self, number):
         if number not in LEFT_HAND_OCTAVES:
             return None
+        if number == self.selected_octave:
+            return number
         self.selected_octave = number
         self.layout = create_touch_piano_layout(
             self.width,
@@ -204,29 +206,30 @@ class PianoModeController:
             LEFT_HAND_OCTAVES[number],
             y=self.y,
         )
-        self.active_midi = None
-        self.touched_midi = None
+        self.active_midi_set.clear()
+        self._triggered.clear()
         return number
 
     def update_right(self, points, now_ms):
         landmarks = normalize_landmarks(points)
         if len(landmarks) != 21:
-            self.active_midi = None
-            self.touched_midi = None
-            return None
-        px, py = index_touch_point(landmarks)
-        key = self.layout.key_at(px, py)
-        if not key:
-            # 手指离开琴键区域，重置
-            self.active_midi = None
-            self.touched_midi = None
-            return None
-        self.active_midi = key.midi
-        # 只在第一次碰到新琴键时触发
-        if key.midi == self.touched_midi:
-            return None
-        self.touched_midi = key.midi
-        return key.midi
+            self.active_midi_set.clear()
+            self._triggered.clear()
+            return []
+
+        # 多指检测：检测所有抬起的手指（食指、中指、无名指）
+        tips = active_fingertips(points, finger_names=("Index", "Middle", "Ring"))
+        current = set()
+        for px, py in tips:
+            key = self.layout.key_at(px, py)
+            if key:
+                current.add(key.midi)
+
+        # 只有离开过琴键区域后才能重新触发
+        newly_touched = current - self._triggered
+        self._triggered = (self._triggered & current) | newly_touched
+        self.active_midi_set = current
+        return sorted(newly_touched)
 
 
 def index_touch_point(points):

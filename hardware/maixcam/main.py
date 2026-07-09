@@ -84,7 +84,7 @@ class Target:
         self.piano_controller = PianoModeController(self.w, self.h - 48, key_height=(self.h - 48) // 2)
         self.guitar_controller = GuitarModeController()
         self.acoustic_guitar_controller = GuitarModeController(chords=ACOUSTIC_GUITAR_CHORDS)
-        self.last_note_midi = None
+        self.last_note_midis = []
         self.last_guitar_chord = None
         self.last_guitar_strum = None
         self.last_hand_visible = False
@@ -124,7 +124,7 @@ class Target:
         self.piano_controller = PianoModeController(self.w, self.h - 48, key_height=(self.h - 48) // 2)
         self.guitar_controller = GuitarModeController()
         self.acoustic_guitar_controller = GuitarModeController(chords=ACOUSTIC_GUITAR_CHORDS)
-        self.last_note_midi = None
+        self.last_note_midis = []
         self.last_guitar_chord = None
         self.last_guitar_strum = None
         self.last_drum_hit = None
@@ -267,7 +267,7 @@ class Target:
         gesture = None
         self.last_drum_hit = None
         self.last_hand_center = None
-        self.last_note_midi = None
+        self.last_note_midis = []
         self.last_guitar_strum = None
         guitar_left_found = False
         face_boxes = getattr(self, "current_face_boxes", None)
@@ -304,7 +304,8 @@ class Target:
                         elif self.selected_instrument == "piano":
                             is_right = is_right_hand(obj, getattr(self.hand_detector, "labels", None), mirrored=True)
                             if is_right:
-                                self.last_note_midi = self.piano_controller.update_right(landmarks, now_ms)
+                                new_midis = self.piano_controller.update_right(landmarks, now_ms)
+                                self.last_note_midis.extend(new_midis)
                             else:
                                 number = self.numeric_gesture_recognizer.classify(landmarks)
                                 self.piano_controller.update_left(number)
@@ -373,7 +374,7 @@ class Target:
                 img.draw_string(
                     8,
                     self.h - 24,
-                    f"Oct:{self.piano_controller.selected_octave} Note:{self.last_note_midi or '-'}",
+                    f"Oct:{self.piano_controller.selected_octave} Notes:{self.last_note_midis or '-'}",
                     image.COLOR_WHITE,
                 )
 
@@ -399,14 +400,14 @@ class Target:
 
     def __draw_piano_keyboard(self, img):
         layout = self.piano_controller.layout
-        active_midi = self.piano_controller.active_midi
+        active_set = self.piano_controller.active_midi_set
         for key in layout.white_keys:
-            is_active = key.midi == active_midi
+            is_active = key.midi in active_set
             color = image.COLOR_GREEN if is_active else image.COLOR_WHITE
             img.draw_rect(key.x, key.y, key.w, key.h, color, 2 if is_active else 1)
             img.draw_string(key.x + 4, key.y + key.h - 20, key.degree, color)
         for key in layout.black_keys:
-            is_active = key.midi == active_midi
+            is_active = key.midi in active_set
             color = image.COLOR_GREEN if is_active else image.COLOR_WHITE
             img.draw_rect(key.x, key.y, key.w, key.h, image.COLOR_BLACK, -1)
             img.draw_rect(key.x, key.y, key.w, key.h, color, 2 if is_active else 1)
@@ -546,8 +547,9 @@ if __name__ == '__main__':
                         target.last_guitar_strum.chord,
                         target.last_guitar_strum.direction,
                     )
-                elif target.selected_instrument == "piano" and target.last_note_midi:
-                    instrument_output.play_note(target.selected_instrument, target.last_note_midi)
+                elif target.selected_instrument == "piano" and target.last_note_midis:
+                    for midi in target.last_note_midis:
+                        instrument_output.play_note(target.selected_instrument, midi)
 
         # 吉他模式下持续同步当前和弦到后端（自动扫弦需要）
         if (

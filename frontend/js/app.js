@@ -59,6 +59,7 @@ const App = (() => {
     Player.init();
     Status.init();
     FloatingNotes.init();
+    Game.init();
 
     bindEvents();
     Gesture.startRenderLoop();
@@ -91,6 +92,19 @@ const App = (() => {
       });
     }
 
+    // 曲谱模式入口（切换）
+    const gameModeBtn = document.getElementById('gameModeBtn');
+    if (gameModeBtn) {
+      gameModeBtn.addEventListener('click', () => {
+        if (Game.getState() !== 'IDLE') {
+          Game.quitGame();
+        } else {
+          // 显示乐器选择界面（不预选乐器）
+          Game.showSelect();
+        }
+      });
+    }
+
     // WebSocket status
     WS.on('status', (data) => {
       Status.setWebSocket(data.connected);
@@ -98,28 +112,44 @@ const App = (() => {
       if (!data.connected && !mockMode) Camera.setBridgeActive(false);
     });
 
+    // 后端欢迎消息（包含 IP 诊断信息）
+    WS.on('welcome', (msg) => {
+      console.log('[Welcome]', msg.message);
+      const backendIpEl = document.getElementById('backendIp');
+      if (backendIpEl) {
+        backendIpEl.textContent = msg.backend_ip || '--';
+        backendIpEl.title = `请确保 MaixCAM config.py 中 PC_SYNTH_HOST = "${msg.backend_ip}"`;
+      }
+    });
+
     WS.on('hardware_status', (msg) => {
-      Status.setHardware(msg.connected, msg.connected ? msg.mode : '');
+      Status.setHardware(msg.connected);
       Camera.setBridgeActive(msg.connected);
       updateMappingPanel({ instrument: msg.mode });
       // 同步模式到手势模块，确保退回选乐器时区域边框恢复
       if (msg.mode === 'selecting') {
         Gesture.updateGesture({ instrument: null });
+        // 曲谱模式下使用退出手势，回到等待选乐器状态
+        const gameState = Game.getState();
+        if (gameState === 'PLAYING' || gameState === 'RESULTS') {
+          Game.quitGame();
+          Game.showSelect(); // 回到选曲状态
+        }
       }
     });
 
     WS.on('camera_frame', (msg) => {
-      Status.setHardware(true, 'video');
+      Status.setHardware(true);
       Camera.setFrame(msg.dataUrl);
+      Status.incrementFrames();
+      if (msg.fps !== undefined) Status.setFps(msg.fps);
     });
 
     // Gesture data
     WS.on('gesture', (msg) => {
-      Status.startLatency();
       Camera.setBridgeActive(true);
       Gesture.updateGesture(msg);
       updateMappingPanel(msg);
-      Status.endLatency();
 
       const nameEl = document.getElementById('gestureName');
       const confEl = document.getElementById('gestureConfidence');
@@ -157,6 +187,11 @@ const App = (() => {
         root: { index: msg.rootIndex, name: msg.root },
         quality: { name: msg.quality, label: msg.qualityLabel }
       });
+      // 曲谱模式: 将吉他和弦事件转发给游戏
+      if (Game.getState() === 'PLAYING' && msg.chord) {
+        const track = gestureToTrackForGame(msg.instrument, msg.chord);
+        if (track > 0) Game.onGestureEvent(track);
+      }
     });
 
     // Note data - play audio
@@ -173,6 +208,11 @@ const App = (() => {
       Player.setNote(msg.note);
       Player.setPlaying(true);
       FloatingNotes.spawn(msg.note);
+      // 曲谱模式: 将钢琴音符事件转发给游戏
+      if (Game.getState() === 'PLAYING' && msg.note) {
+        const track = gestureToTrackForGame('piano', msg.note);
+        if (track > 0) Game.onGestureEvent(track);
+      }
     });
 
     WS.on('drum', (msg) => {
@@ -189,6 +229,11 @@ const App = (() => {
       if (localAudio) Audio.playNote('C3');
       FloatingNotes.spawn('drums');
       updateMappingPanel({ instrument: 'drums', root: msg.drum, quality: msg.velocity });
+      // 曲谱模式: 将鼓事件转发给游戏
+      if (Game.getState() === 'PLAYING' && msg.velocity) {
+        const track = gestureToTrackForGame('drums', msg.velocity);
+        if (track > 0) Game.onGestureEvent(track);
+      }
     });
 
     // Volume data
@@ -210,6 +255,19 @@ const App = (() => {
       Status.setFps(fps);
     });
 
+    // Ping-pong latency measurement
+    WS.on('pong', (msg) => {
+      if (msg.t !== undefined) {
+        const latency = Math.round(performance.now() - msg.t);
+        Status.setLatency(latency);
+      }
+    });
+    setInterval(() => {
+      if (WS.isConnected()) {
+        WS.send({ type: 'ping', t: performance.now() });
+      }
+    }, 2000);
+
     // Camera error
     Camera.on('error', (err) => {
       console.warn('摄像头错误:', err.message);
@@ -222,6 +280,18 @@ const App = (() => {
       Gesture.triggerEvent(data.name || data.instrument);
       Gesture.draw();
       updateAutoStrumVisibility(data.instrument);
+      // 曲谱模式下切换乐器时更新界面（仅用户主动切换时）
+      const gameState = Game.getState();
+      if (gameState === 'SELECTING') {
+        Game.showSelect(data.instrument);
+      } else if (gameState === 'PLAYING' || gameState === 'RESULTS') {
+        // 只有当乐器真正改变时才退出游戏（忽略硬件事件触发的重复选择）
+        const startInstrument = Game.getGameStartInstrument();
+        if (startInstrument && startInstrument !== data.instrument) {
+          Game.quitGame();
+          Game.showSelect(data.instrument);
+        }
+      }
     });
 
     // Auto-strum controls
@@ -278,6 +348,24 @@ const App = (() => {
       nameEl.textContent = label;
     }
     if (confEl) confEl.textContent = meta;
+  }
+
+  /**
+   * 手势名称 → 游戏轨道编号
+   * 用于曲谱模式下将硬件事件映射到游戏判定
+   */
+  function gestureToTrackForGame(instrument, gestureName) {
+    const maps = {
+      piano: { 'C4': 1, 'D4': 2, 'E4': 3, 'F4': 4 },
+      electric_guitar: { 'C5': 1, 'D5': 2, 'E5': 3, 'F5': 4 },
+      acoustic_guitar: { 'C': 1, 'G': 2, 'Am': 3, 'F': 4 },
+      drums: { 'ghost': 1, 'normal': 2, 'accent': 3 }
+    };
+    const map = maps[instrument];
+    if (!map) return -1;
+    // 提取纯名称 (去掉 " down" / " up" 等方向后缀)
+    const clean = gestureName.replace(/\s+(down|up)$/i, '');
+    return map[clean] || -1;
   }
 
   // ===== 自动扫弦 =====
@@ -374,7 +462,7 @@ const App = (() => {
     setTimeout(() => {
       Status.setWebSocket(true);
       Status.setBackend(true);
-      Status.setHardware(true, 'mock');
+      Status.setHardware(true);
     }, 600);
 
     let gestureIndex = 0;
