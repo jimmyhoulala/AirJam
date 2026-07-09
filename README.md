@@ -4,9 +4,9 @@ AirJam 使用 MaixCAM2 的硬件摄像头完成手势识别，再把演奏事件
 
 ## Demo
 
-[![AirJam Demo](docs/demo-cover.png)](docs/demo.mp4)
+[![AirJam Demo](docs/demo-preview.gif)](docs/demo.mp4)
 
-[点击封面或这里查看 demo 视频](docs/demo.mp4)
+[点击动图或这里查看完整 demo 视频](docs/demo.mp4)
 
 ## 架构
 
@@ -40,6 +40,7 @@ docs/
   HARDWARE.md             # MaixCAM2 硬件接入说明
   GESTURE.md              # 手势识别与演奏映射
   demo-cover.png          # README 演示封面
+  demo-preview.gif        # README 动态演示预览
   demo.mp4                # GitHub README 演示视频
 
 hardware/
