@@ -5,6 +5,7 @@ Thumbs.db
 # Editor and IDE
 .idea/
 .vscode/
+.playwright-cli/
 *.swp
 *.swo
 
