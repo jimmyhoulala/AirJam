@@ -162,10 +162,10 @@ http://localhost:8080/?mock=1&localAudio=1
       </a>
     </td>
     <td align="center">
-      <a href="https://github.com/nofish777">
-        <img src="https://github.com/nofish777.png?size=96" width="72" height="72" alt="nofish777" />
+      <a href="https://github.com/nofish77">
+        <img src="https://github.com/nofish77.png?size=96" width="72" height="72" alt="nofish77" />
         <br />
-        <sub><b>nofish777</b></sub>
+        <sub><b>nofish77</b></sub>
       </a>
     </td>
     <td align="center">
